@@ -150,6 +150,65 @@ def _last_refresh() -> dict | None:
         return None
 
 
+def data_quality() -> dict:
+    """数据质量面板：每个来源最近一次成功/失败、样本新鲜度、验证码情况。
+
+    目的：让「数据还能不能信」一眼可见 —— 哪个源断了、断了几天、是不是被
+    验证码拦的，都如实列出，不做任何美化。
+    """
+    since = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    per_source: dict[str, dict] = {}
+
+    freshness = query_all(
+        "SELECT source, MAX(last_seen) AS last_seen, COUNT(*) AS n FROM listing "
+        "WHERE source_kind='crawled' GROUP BY source"
+    )
+    for r in freshness:
+        per_source.setdefault(str(r["source"]), {}).update({
+            "listing_n": int(r["n"] or 0),
+            "last_seen": r["last_seen"],
+        })
+
+    ok_log = query_all(
+        "SELECT source, MAX(created_at) AS at FROM crawl_log "
+        "WHERE status IN ('ok','partial') GROUP BY source"
+    )
+    for r in ok_log:
+        per_source.setdefault(str(r["source"]), {})["last_ok_crawl"] = r["at"]
+
+    fail_log = query_all(
+        "SELECT source, COUNT(*) AS n, MAX(created_at) AS at FROM crawl_log "
+        "WHERE status='failed' AND substr(created_at,1,10)>=? GROUP BY source",
+        (since,),
+    )
+    for r in fail_log:
+        per_source.setdefault(str(r["source"]), {}).update({
+            "failed_7d": int(r["n"] or 0),
+            "last_failed_at": r["at"],
+        })
+
+    last_refresh = _last_refresh() or {}
+    captcha_sources = [
+        k for k, v in (last_refresh.get("sources") or {}).items() if v.get("captcha")
+    ]
+
+    items = []
+    for key, v in sorted(per_source.items()):
+        items.append({
+            "source": key,
+            "label": _mask_source_platform(key),
+            **v,
+            "failed_7d": v.get("failed_7d", 0),
+            "captcha_blocked_now": key in captcha_sources,
+        })
+    return {
+        "sources": items,
+        "captcha_blocked_now": captcha_sources,
+        "note": "last_seen=该来源房源最近一次出现在抓取结果里的日期；"
+                "被验证码拦截的来源当天会如实标记，不会假装抓到了数据。",
+    }
+
+
 def overview() -> dict:
     """来源总览：如实报告「有多少是真的」。"""
     total = int(scalar("SELECT COUNT(*) FROM listing WHERE status='active'", default=0))
@@ -227,6 +286,7 @@ def overview() -> dict:
                     else "异动会主动推送到外部通道",
         },
         "last_refresh": _last_refresh(),
+        "quality": data_quality(),
         "preconditions": CRAWL_PRECONDITIONS,
         "honesty_note": (
             "当前在挂房源全部为演示样本，来源标签仅作字段示意，与任何真实平台无关。"

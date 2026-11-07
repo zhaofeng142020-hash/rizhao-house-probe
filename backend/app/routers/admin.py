@@ -596,6 +596,18 @@ def official_deals(kind: str = "sign"):
 # 法拍成交结果回填：日照没有公开成交页，法拍是少数能拿到「真实成交价」的
 # 公开渠道。拍卖结束后把成交价录进来，就成了真实价格锚点（可手动/CSV 回填）。
 # --------------------------------------------------------------------------
+
+
+@router.post("/refresh-rents")
+def refresh_rents(pages: int = 3):
+    """手动抓一次贝壳日照租房页并重算租售比（日常由调度器每周自动跑）。"""
+    from ..services.rent_pulse import refresh_rents as _refresh
+    try:
+        return {"ok": True, **_refresh(max(1, min(pages, 5)))}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"租金刷新失败：{type(exc).__name__}: {exc}") from exc
+
+
 class AuctionResultIn(BaseModel):
     deal_price: float
     deal_date: str | None = None

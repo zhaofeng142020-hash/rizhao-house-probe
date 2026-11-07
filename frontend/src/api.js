@@ -87,6 +87,10 @@ export const api = {
 
   // ---- 市场大盘 ----
   marketOverview: (days) => request(`/api/market/overview${qs({ days })}`),
+  marketRents: () => request('/api/market/rents'),
+  rateTable: (params) => request(`/api/meta/rate-table${qs(params)}`),
+  dropTiming: (days) => request(`/api/anomalies/drop-timing${qs({ days })}`),
+  refreshRents: () => request('/api/admin/refresh-rents?pages=3', { method: 'POST', body: '{}' }),
 
   // ---- 数据来源 ----
   sourceOverview: () => request('/api/sources'),

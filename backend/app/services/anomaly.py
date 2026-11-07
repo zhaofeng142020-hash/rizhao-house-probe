@@ -387,3 +387,51 @@ def detect_auction_events(auction: dict, comp: dict, cfg: dict | None = None,
 def build_event_key(event_type: str, target_type: str, target_id: Any, day: date) -> str:
     """事件去重键：同一房源同一类型每天一条。"""
     return f"{event_type}|{target_type}|{target_id}|{day.isoformat()}"
+
+
+# --------------------------------------------------------------------------
+# 降价时机规律：降价事件集中在几月 / 星期几发生（观察口径，不是预测）
+# --------------------------------------------------------------------------
+def drop_timing(days: int = 365) -> dict:
+    """统计近 N 天 price_history 里的降价（drop_pct<0）按月/星期的分布。
+
+    样本只来自已观测到的调价记录，量小的时候如实说明样本不足。
+    """
+    from datetime import date as _date, timedelta as _td
+
+    from ..db import query_all
+
+    cutoff = (_date.today() - _td(days=days)).isoformat()
+    rows = query_all(
+        "SELECT observed_at, drop_pct FROM price_history "
+        "WHERE drop_pct < 0 AND observed_at >= ?",
+        (cutoff,),
+    )
+    by_month: dict[int, int] = {}
+    by_weekday: dict[int, int] = {}
+    for r in rows:
+        try:
+            d = _date.fromisoformat(str(r["observed_at"])[:10])
+        except ValueError:
+            continue
+        by_month[d.month] = by_month.get(d.month, 0) + 1
+        by_weekday[d.weekday()] = by_weekday.get(d.weekday(), 0) + 1   # 0=周一
+
+    month_names = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"]
+    weekday_names = ["周一","周二","周三","周四","周五","周六","周日"]
+    total = len(rows)
+    months = [{"label": month_names[i], "n": by_month.get(i + 1, 0)} for i in range(12)]
+    weekdays = [{"label": weekday_names[i], "n": by_weekday.get(i, 0)} for i in range(7)]
+    return {
+        "days": days,
+        "total_drops": total,
+        "months": months,
+        "weekdays": weekdays,
+        "peak_month": max(months, key=lambda x: x["n"])["label"] if total else None,
+        "note": (
+            f"近 {days} 天共观测到 {total} 次降价。"
+            + ("样本量还小，规律仅供参考，不构成对未来的预测。" if total < 30 else
+               "降价记录来自抓取到的调价，未覆盖的房源不计入。")
+        ),
+        "disclaimer": "历史降价月份集中 ≠ 未来也会在同样的月份降价。",
+    }

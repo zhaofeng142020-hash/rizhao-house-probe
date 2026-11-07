@@ -61,6 +61,23 @@
       <b>{{ fmt.money(calc.income) }}</b>。
     </div>
 
+    <!-- 利率敏感度：同样月供，不同利率档位能承受的总价 -->
+    <div class="rent-box">
+      <div class="rb-title">利率敏感度 · 同样月供能买多贵</div>
+      <div v-for="row in rateRows" :key="row.rate"
+           class="rate-row" :class="{ current: Math.abs(row.rate - ratePct / 100) < 1e-6 }">
+        <span class="mono tiny">{{ (row.rate * 100).toFixed(2) }}%</span>
+        <span class="mono small">{{ row.affordable }} 万</span>
+        <span class="mono tiny" :style="{ color: row.diff >= 0 ? 'var(--good)' : 'var(--red)' }">
+          {{ row.diff >= 0 ? '+' : '' }}{{ row.diff }} 万
+        </span>
+      </div>
+      <div class="tiny muted" style="margin-top:6px">
+        以你当前设置的月供为锚，反推各利率档位下同样月供能承受的总价（首付比例不变）。
+        利率降 0.5 个点大概能多买多少，一眼可见；只算商贷等额本息。
+      </div>
+    </div>
+
     <!-- 租金视角 -->
     <div v-if="rent.yield_pct" class="rent-box">
       <div class="rb-title">租金视角</div>
@@ -132,6 +149,30 @@ function monthlyOf(principal, annualRatePct, yrs) {
   const f = Math.pow(1 + r, n)
   return (principal * r * f) / (f - 1)
 }
+
+/** 利率敏感度：以当前月供为锚，反推各利率档位可承受总价（万元） */
+const rateRows = computed(() => {
+  const total = Number(props.item.total_price || 0)
+  const down = Math.max(0.05, Math.min(0.9, downPct.value / 100))
+  const loan = total * (1 - down)
+  if (loan <= 0) return []
+  const anchor = monthlyOf(loan, ratePct.value, years.value)
+  if (anchor <= 0) return []
+  const n = years.value * 12
+  const rows = []
+  for (let pct = 2.4; pct <= 4.4 + 1e-9; pct += 0.2) {
+    const r = pct / 100 / 12
+    const f = Math.pow(1 + r, n)
+    const principal = (anchor * (f - 1)) / (r * f)
+    const affordable = principal / (1 - down)
+    rows.push({
+      rate: Math.round(pct * 100) / 100,
+      affordable: Math.round(affordable / 10000),
+      diff: Math.round((affordable - total) / 10000),
+    })
+  }
+  return rows
+})
 
 const calc = computed(() => {
   const total = Number(props.item.total_price || 0)

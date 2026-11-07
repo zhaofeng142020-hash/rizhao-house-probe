@@ -64,6 +64,19 @@
       <b>能不能卖得掉：</b>{{ s.liquidity_note }}
     </div>
 
+    <!-- 真实租售比（最近一批租房样本口径） -->
+    <div v-if="rent && rent.available" class="liquidity-note section-gap">
+      <b>租售比视角：</b>
+      最近 {{ rent.collected_date }} 抓到 {{ rent.sample_n }} 套在租，
+      租金中位 <b class="mono">{{ rent.median_rent }}</b> 元/月
+      （{{ rent.median_rent_pm }} 元/㎡·月），
+      年化租金回报约 <b class="mono">{{ rent.rent_yield_pct != null ? rent.rent_yield_pct + '%' : '—' }}</b>。
+      <span class="tiny muted">{{ rent.note }}</span>
+    </div>
+    <div v-else-if="rent && !rent.available" class="liquidity-note section-gap tiny muted">
+      租售比：{{ rent.note }}
+    </div>
+
     <!-- 关注小区 + 挂牌中位价波动 -->
     <div class="card card-pad section-gap">
       <div class="card-title">
@@ -292,6 +305,7 @@ const { isMobile } = useIsMobile()
 
 const loading = ref(true)
 const data = ref(null)
+const rent = computed(() => data.value?.rent || null)
 const sortKey = ref('unit')
 
 const c = computed(() => data.value?.community || {})

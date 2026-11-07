@@ -893,6 +893,12 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 去化近似 = 在售总量 / 近 30 天下架量，明确标注为「近似」，只做方向参考。
 小区的「近 90 天成交套数」community.deal_active_90d 也会由下架量自动回填（有真实采集数据时）。
 
+**真实租售比（P1）**：贝壳日照租房页（rz.zu.ke.com/zufang/，实测 2419 套在租、免验证码、免会话）
+每周日 03:30 自动抓一批 → rent_sample 每小区租金中位 → 年化租金回报率 =
+租金中位(元/㎡·月)×12 ÷ 在售挂牌单价中位。小区详情页与首页大盘都有展示；
+来源页新增「数据质量」面板，异动页新增「降价时机规律」，购房成本面板新增
+「利率敏感度：同样月供能买多贵」，观察清单页新增「关注小区横向对比」。
+
 ### 15.3 让房源真正变全：导入真实挂牌
 
 「数据来源」页提供 JSON 导入（需管理口令），这是目前唯一能保证准确和真实的路径：
@@ -966,6 +972,10 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 | POST/DELETE | `/api/communities/{id}/watch` | **关注 / 取消关注小区**（写操作，需口令） |
 | GET | `/api/communities/followed` | 我关注的小区 + 各自最新波动 |
 | GET | `/api/market/overview` | **市场大盘**：全城在售/中位价/新增/下架趋势 + 去化近似（仅真实采集口径） |
+| GET | `/api/market/rents` | **真实租售比**：每小区租金中位与年化租金回报率（贝壳租房页每周自动抓） |
+| GET | `/api/meta/rate-table` | **利率敏感度**：同月供在不同利率档位可承受的总价 |
+| GET | `/api/anomalies/drop-timing` | **降价时机规律**：降价按月份/星期的分布（观察口径） |
+| POST | `/api/admin/refresh-rents` | 手动抓一次租房页并重算租售比（日常每周日自动） |
 | GET | `/api/sources` | **来源总览**：演示/真实条数、5 个通道状态、采集前置条件、口径说明 |
 | GET | `/api/sources/template` | 真实房源导入字段模板与规则 |
 | POST | `/api/admin/sources/import` | **导入真实挂牌**（强制原始链接、逐行返回校验结果） |

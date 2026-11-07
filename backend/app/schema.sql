@@ -349,10 +349,6 @@ CREATE TABLE IF NOT EXISTS community_price_snapshot (
 CREATE INDEX IF NOT EXISTS idx_comm_snapshot_date ON community_price_snapshot(observed_date);
 
 -- ---------------------------------------------------------------------------
--- 16. 真实房源导入批次（来源可追溯）
---     人工/CSV 导入的每一批都留痕：谁、什么时候、从哪个平台、进了几条。
--- ---------------------------------------------------------------------------
--- ---------------------------------------------------------------------------
 -- 17. 市场大盘日快照（全城口径，只统计真实采集数据）
 --     listing_n / median_unit 来自当日 active 的 crawled 房源；
 --     new_n 当日新挂牌；delist_n 当日判定下架（下架≠成交，是成交的保守代理）。
@@ -369,6 +365,31 @@ CREATE TABLE IF NOT EXISTS market_daily (
     created_at   TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
     UNIQUE (day)
 );
+
+-- ---------------------------------------------------------------------------
+-- 18. 租金样本（真实租售比用）
+--     每周从贝壳日照租房页低频抓一批；租售比按「每小区最近一次采集」口径算，
+--     旧批次保留作历史，不参与汇总。
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rent_sample (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    fingerprint     TEXT    NOT NULL UNIQUE,
+    source          TEXT    NOT NULL DEFAULT 'ke_zu',
+    source_ref      TEXT,
+    source_url      TEXT,
+    community_id    INTEGER REFERENCES community(id),
+    community_name  TEXT    NOT NULL,
+    district        TEXT,
+    layout          TEXT,
+    area            REAL,
+    rent_month      REAL    NOT NULL,                 -- 元/月
+    rent_pm         REAL,                             -- 元/㎡·月
+    collected_date  TEXT    NOT NULL,                 -- YYYY-MM-DD
+    raw_json        TEXT,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_rent_community ON rent_sample(community_id, collected_date);
+CREATE INDEX IF NOT EXISTS idx_rent_date ON rent_sample(collected_date);
 
 -- ---------------------------------------------------------------------------
 -- 16. 真实房源导入批次（来源可追溯）

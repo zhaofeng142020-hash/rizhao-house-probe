@@ -57,6 +57,11 @@
             <div class="ms-label">去化近似</div>
             <div class="ms-value">{{ market.clearance_months != null ? market.clearance_months : '—' }} <span class="ms-unit">个月</span></div>
           </div>
+          <div v-if="rents && rents.city && rents.city.yield_median != null" class="ms-item">
+            <div class="ms-label">全城租售比</div>
+            <div class="ms-value">{{ rents.city.yield_median }} <span class="ms-unit">%/年</span></div>
+            <div class="ms-sub">{{ rents.city.sample_n }} 套在租样本</div>
+          </div>
         </div>
         <Chart :option="marketChart" height="230px" />
         <div class="tiny" style="color:var(--muted);margin-top:6px">{{ market.clearance_note }}</div>
@@ -192,6 +197,7 @@ const listings = ref([])
 const auctions = ref([])
 const summary = ref({ by_type: [] })
 const market = ref(null)
+const rents = ref(null)
 
 const counts = computed(() => dashboard.value?.counts || {})
 const recentEvents = computed(() => (dashboard.value?.recent_events || []).slice(0, 6))
@@ -229,6 +235,9 @@ async function load() {
     auctions.value = todayData.auctions
     summary.value = sum
     market.value = mkt
+    try {
+      rents.value = await api.marketRents()
+    } catch (e) { /* 租售比失败不阻塞首页 */ }
   } catch (e) {
     ElMessage.error('加载失败：' + e.message)
   } finally {
@@ -240,7 +249,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.market-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 8px; }
+.market-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 8px; }
 .ms-item { background: var(--panel-soft, rgba(148,163,184,.08)); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
 .ms-label { font-size: 11.5px; color: var(--muted); }
 .ms-value { font-size: 18px; font-weight: 700; margin-top: 2px; }
