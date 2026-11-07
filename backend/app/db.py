@@ -40,6 +40,8 @@ COLUMN_PATCHES: dict[str, dict[str, str]] = {
         "source_name": "TEXT",
         "source_ref": "TEXT",
         "collected_at": "TEXT",
+        "deal_price": "REAL",                            # 实际成交价（拍卖结束后回填）
+        "deal_date": "TEXT",                             # 成交日期
     },
     "new_home": {
         "source_kind": "TEXT NOT NULL DEFAULT 'demo'",

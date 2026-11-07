@@ -11,6 +11,7 @@
   board_divergence  板块背离：板块横盘/下行，个盘逆势低价
   new_home          新房信号：新盘特价/抵账房/尾盘，单价低于周边二手 5% 以上
   auction_deal      法拍信号：起拍净折扣 ≥15%，且占用/税费风险为中低
+  auction_result    法拍成交：拍卖结束后回填的真实成交价（真实价格锚点）
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ EVENT_LABELS: dict[str, str] = {
     "board_divergence": "板块背离",
     "new_home": "新房倒挂",
     "auction_deal": "法拍机会",
+    "auction_result": "法拍成交",
 }
 
 # 各类事件的可信权重（用于「异动强度」排序，不进总分）
@@ -40,6 +42,7 @@ EVENT_STRENGTH: dict[str, float] = {
     "board_divergence": 0.6,
     "new_home": 0.8,
     "auction_deal": 0.95,
+    "auction_result": 1.0,
 }
 
 

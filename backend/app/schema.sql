@@ -119,6 +119,8 @@ CREATE TABLE IF NOT EXISTS auction (
     landing_price         REAL,                         -- 到手价预估（上面三项之和 + 起拍）
 
     comparable_unit_price REAL,                         -- 同小区二手可比单价（人工/引擎回填）
+    deal_price            REAL,                         -- 实际成交价（拍卖结束后回填；NULL=未回填/流拍未知）
+    deal_date             TEXT,                         -- 成交日期 YYYY-MM-DD
     start_discount        REAL,                         -- 起拍折扣率 = 1 - 起拍/评估
     net_discount          REAL,                         -- 捡漏净折扣 = 1 - (到手单价 / 可比单价)
 
@@ -345,6 +347,28 @@ CREATE TABLE IF NOT EXISTS community_price_snapshot (
     UNIQUE (community_id, observed_date)
 );
 CREATE INDEX IF NOT EXISTS idx_comm_snapshot_date ON community_price_snapshot(observed_date);
+
+-- ---------------------------------------------------------------------------
+-- 16. 真实房源导入批次（来源可追溯）
+--     人工/CSV 导入的每一批都留痕：谁、什么时候、从哪个平台、进了几条。
+-- ---------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- 17. 市场大盘日快照（全城口径，只统计真实采集数据）
+--     listing_n / median_unit 来自当日 active 的 crawled 房源；
+--     new_n 当日新挂牌；delist_n 当日判定下架（下架≠成交，是成交的保守代理）。
+--     重复跑只覆盖当天。城市大盘仪表盘与去化近似都从这张表读。
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS market_daily (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    day          TEXT    NOT NULL,                       -- YYYY-MM-DD
+    listing_n    INTEGER NOT NULL DEFAULT 0,             -- 当日在售（crawled）
+    median_unit  REAL,                                   -- 全城中位挂牌单价 元/㎡
+    new_n        INTEGER NOT NULL DEFAULT 0,             -- 当日新增挂牌
+    delist_n     INTEGER NOT NULL DEFAULT 0,             -- 当日判定下架
+    note         TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE (day)
+);
 
 -- ---------------------------------------------------------------------------
 -- 16. 真实房源导入批次（来源可追溯）

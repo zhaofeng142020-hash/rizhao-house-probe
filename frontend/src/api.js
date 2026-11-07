@@ -85,6 +85,9 @@ export const api = {
   unwatchCommunity: (id) => request(`/api/communities/${id}/watch`, { method: 'DELETE' }),
   followedCommunities: () => request('/api/communities/followed'),
 
+  // ---- 市场大盘 ----
+  marketOverview: (days) => request(`/api/market/overview${qs({ days })}`),
+
   // ---- 数据来源 ----
   sourceOverview: () => request('/api/sources'),
   sourceTemplate: () => request('/api/sources/template'),

@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import BASE_DIR, settings
 from .db import init_db, query_one
 from .routers import (
-    admin, alerts, anomalies, auctions, communities, listings, meta, newhomes, sources,
+    admin, alerts, anomalies, auctions, communities, listings, market, meta, newhomes, sources,
     target, watchlist,
 )
 from .scheduler import shutdown_scheduler, start_scheduler
@@ -152,6 +152,7 @@ app.include_router(auctions.router)
 app.include_router(watchlist.router)
 app.include_router(alerts.router)
 app.include_router(communities.router)
+app.include_router(market.router)
 app.include_router(newhomes.router)
 app.include_router(target.router)
 app.include_router(admin.router)

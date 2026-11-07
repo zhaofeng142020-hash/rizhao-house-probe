@@ -316,6 +316,58 @@ export function curveOption(curve = []) {
   }
 }
 
+/** 市场大盘：在售套数（柱，右轴）+ 中位挂牌单价（线，左轴） */
+export function marketOption(series = []) {
+  if (!series.length) return null
+  const dates = series.map((p) => String(p.date).slice(5))   // MM-DD 省空间
+  return {
+    grid: { left: 10, right: 14, top: 34, bottom: 24, containLabel: true },
+    legend: { top: 0, left: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: C.muted, fontSize: 11 } },
+    tooltip: {
+      ...tooltipStyle,
+      trigger: 'axis',
+      formatter: (ps) => {
+        const idx = ps[0].dataIndex
+        const p = series[idx]
+        return `${p.date}<br/>中位单价 ${p.median_unit ? Math.round(p.median_unit).toLocaleString() : '—'} 元/㎡` +
+          `<br/>在售 ${p.listing_n} 套 · 新增 ${p.new_n} · 下架 ${p.delist_n}`
+      },
+    },
+    xAxis: {
+      type: 'category', data: dates, boundaryGap: true,
+      axisLine: { lineStyle: { color: C.line } }, axisTick: { show: false },
+      axisLabel: { color: C.muted, fontSize: 10, interval: Math.max(0, Math.floor(dates.length / 8) - 1) },
+    },
+    yAxis: [
+      {
+        type: 'value', name: '元/㎡', scale: true,
+        nameTextStyle: { color: C.muted, fontSize: 11 },
+        splitLine: { lineStyle: { color: C.line, type: 'dashed' } },
+        axisLabel: { color: C.muted, fontSize: 11, formatter: (v) => (v / 1000).toFixed(1) + 'k' },
+      },
+      {
+        type: 'value', name: '套',
+        nameTextStyle: { color: C.muted, fontSize: 11 },
+        splitLine: { show: false },
+        axisLabel: { color: C.muted, fontSize: 11 },
+      },
+    ],
+    series: [
+      {
+        name: '在售套数', type: 'bar', yAxisIndex: 1, barWidth: 10,
+        itemStyle: { color: 'rgba(100,116,139,.35)', borderRadius: [3, 3, 0, 0] },
+        data: series.map((p) => p.listing_n),
+      },
+      {
+        name: '中位单价', type: 'line', yAxisIndex: 0, smooth: true, symbol: 'none',
+        lineStyle: { color: C.brand, width: 2 },
+        areaStyle: { color: C.brandSoft },
+        data: series.map((p) => p.median_unit),
+      },
+    ],
+  }
+}
+
 /** 异动类型分布（横向条形） */
 export function eventTypeOption(byType = []) {
   const sorted = [...byType].sort((a, b) => a.n - b.n)
