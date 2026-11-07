@@ -28,6 +28,14 @@ def _daily_job() -> None:
         logger.info("每日增量计算完成: %s", {k: v for k, v in summary.items() if k != "errors"})
     except Exception:  # noqa: BLE001  定时任务不能因为一次异常就死掉
         logger.exception("每日增量计算失败")
+    # 大盘日快照兜底：即使今天没跑抓取（比如停过一次），也把当天在售/存量落一份，
+    # 保证趋势序列不断点。下架判定只在抓取日做（detect 内部已按来源守门）。
+    try:
+        from .services import market_pulse
+        market_pulse.detect_delistings()
+        market_pulse.record_market_daily()
+    except Exception:  # noqa: BLE001
+        logger.warning("每日大盘快照失败", exc_info=True)
 
 
 def _refresh_job() -> None:
@@ -79,6 +87,20 @@ def _refresh_job() -> None:
             logger.exception("刷新摘要推送失败")
 
 
+def _session_check_job() -> None:
+    """每日一次会话自检：失效就主动推送恢复提醒（带入口），不再盲目重试。"""
+    logger.info("开始会话自检…")
+    try:
+        from .services.live_refresh import push_session_alert, session_health
+        health = session_health()
+        bad = [h for h in health if h.get("has_cookie") and not h.get("ok")]
+        logger.info("会话自检完成：%s 个来源失效", len(bad))
+        if bad:
+            push_session_alert(bad)
+    except Exception:  # noqa: BLE001
+        logger.exception("会话自检失败")
+
+
 def _weekly_job() -> None:
     logger.info("开始生成观察周报…")
     try:
@@ -122,8 +144,13 @@ def start_scheduler() -> BackgroundScheduler | None:
         _weekly_job, CronTrigger(day_of_week="mon", hour=8, minute=30),
         id="weekly_report", replace_existing=True, max_instances=1, coalesce=True,
     )
+    # 每日 09:10 会话自检（在早上第一次刷新之后，坏了当天就能收到恢复提醒）
+    _scheduler.add_job(
+        _session_check_job, CronTrigger(hour=9, minute=10),
+        id="session_check", replace_existing=True, max_instances=1, coalesce=True,
+    )
     _scheduler.start()
-    logger.info("调度器已启动：每日 %s 增量计算，每天 %s 刷新真实房源，每周一 08:30 观察周报",
+    logger.info("调度器已启动：每日 %s 增量计算，每天 %s 刷新真实房源，每日 09:10 会话自检，每周一 08:30 观察周报",
                 settings.DAILY_RUN_AT, "、".join(refresh_times) or "（未启用）")
     return _scheduler
 
@@ -151,6 +178,7 @@ def job_snapshot() -> list[dict]:
             "name": {
                 "daily_pipeline": "每日增量计算",
                 "weekly_report": "观察周报",
+                "session_check": "会话自检",
             }.get(job.id, "刷新真实房源" if job.id.startswith("live_refresh") else job.id),
             "next_run": nxt.isoformat() if nxt else None,
         })

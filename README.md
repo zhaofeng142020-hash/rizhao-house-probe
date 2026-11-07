@@ -869,6 +869,30 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 3. 需服务端 `CRAWL_ENABLED=1` 且在管理台开启对应通道；
 4. **首批数据必须人工核对 3~5 条**（价格、面积、原始链接能否打开）再正式使用。
 
+### 15.2.5 真实成交价：日照的实测结论与替代方案
+
+**实测结论（2026-11-07）：日照这个城市在主流平台上没有公开的成交记录页。**
+
+| 尝试 | 结果 |
+|---|---|
+| 贝壳成交页 rz.ke.com/chengjiao/ | 会被重定向回二手房列表（ljConf.channel=ershoufang），无成交数据 |
+| 安居客成交页 m.anjuke.com/rz/chengjiao/ | 直接 404 |
+| 贝壳小区行情页「参考均价」 | 空值（小城市无成交样本） |
+
+既然拿不到「真成交价」，系统改用三条**能稳定全自动拿到、且口径诚实**的数据逼近真实：
+
+1. **下架追踪（成交活跃度代理）**：每套房上次还在、连续 ≥10 天不再出现 → 标记 delisted。
+   只有「当天确实抓过该来源」才判定，避免把「没翻到那一页」误报成下架。
+   **下架 ≠ 成交**（也可能是中介撤牌），所以它只用来判断活跃度方向和近似去化速度，不当成交套数。
+   services/market_pulse.py · detect_delistings()，每次刷新后自动执行。
+2. **全城日快照**：在售总量 / 中位挂牌单价 / 当日新增 / 当日下架，落 market_daily 时间序列
+   （只统计 source_kind='crawled'，演示样本不计入）。前端首页「市场大盘」卡片 + GET /api/market/overview。
+3. **法拍成交结果回填（真实价格锚点）**：法拍是日照少数能公开拿到真实成交价的渠道。
+   拍卖结束后 POST /api/admin/auctions/{id}/result 录入成交价，写回 deal_price 并生成 auction_result 事件。
+
+去化近似 = 在售总量 / 近 30 天下架量，明确标注为「近似」，只做方向参考。
+小区的「近 90 天成交套数」community.deal_active_90d 也会由下架量自动回填（有真实采集数据时）。
+
 ### 15.3 让房源真正变全：导入真实挂牌
 
 「数据来源」页提供 JSON 导入（需管理口令），这是目前唯一能保证准确和真实的路径：
@@ -920,6 +944,8 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 - 小区波动跟踪的是**在售中位挂牌单价**，不是成交价，也不是同一套房的降价；新挂高价房、低价房成交下架都会让中位价变动（结构性变化）。
 - **租金回报** 为挂牌中位 × 12 / 总价，仅作持有底线参考。
 - **法拍到手价** 为估算，真实税费以当地税务与法院公告为准。
+- **下架 ≠ 成交**：market_daily.delist_n 是把「多日不再出现」当作成交活跃度的保守代理，含中介撤牌等情况；去化月数是用它做的近似，只能看方向，不能当成交套数。
+- **市场大盘只统计真实采集房源**（source_kind='crawled'），演示样本不计入。
 
 ---
 
@@ -939,6 +965,7 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 | GET | `/api/communities/{id}/trend` | **小区趋势**：价格序列 + 7/30/90 天变化 + 回推点说明 + 免责口径 |
 | POST/DELETE | `/api/communities/{id}/watch` | **关注 / 取消关注小区**（写操作，需口令） |
 | GET | `/api/communities/followed` | 我关注的小区 + 各自最新波动 |
+| GET | `/api/market/overview` | **市场大盘**：全城在售/中位价/新增/下架趋势 + 去化近似（仅真实采集口径） |
 | GET | `/api/sources` | **来源总览**：演示/真实条数、5 个通道状态、采集前置条件、口径说明 |
 | GET | `/api/sources/template` | 真实房源导入字段模板与规则 |
 | POST | `/api/admin/sources/import` | **导入真实挂牌**（强制原始链接、逐行返回校验结果） |
@@ -953,6 +980,7 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 | GET | `/api/anomalies/summary` | 异动统计（按类型 + 级别） |
 | GET | `/api/anomalies/ranking` | 捡漏排行（二手房 + 法拍混排） |
 | GET | `/api/auctions` `/api/auctions/{id}` | 法拍列表 / 详情（含到手价瀑布数据） |
+| POST | `/api/admin/auctions/{id}/result` | **回填法拍成交价**（真实价格锚点，生成 auction_result） |
 | GET/POST | `/api/watchlist` | 观察清单（含价格曲线） |
 | PATCH/DELETE | `/api/watchlist/{id}` | 改跟进状态/备注、移除 |
 | GET | `/api/watchlist/weekly-report` | 观察周报 |
@@ -981,7 +1009,7 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 | 要求 | 落地位置 |
 |---|---|
 | 完整项目目录结构 | 见第 4 节 |
-| 数据库表设计（异动/评分/观察/订阅 SQL） | `backend/app/schema.sql`（16 张表，旧库启动自动补列） |
+| 数据库表设计（异动/评分/观察/订阅 SQL） | `backend/app/schema.sql`（17 张表，旧库启动自动补列） |
 | 异动检测 + 捡漏评分（纯函数、可单测） | `services/anomaly.py` / `services/scoring.py` + `tests/` |
 | 爬虫 parser（去重指纹 + 异常隔离） | `crawler/secondhand.py` / `crawler/auction.py` / `crawler/runner.py` |
 | 后端 API（异动/排行/观察/推送） | `backend/app/routers/` |

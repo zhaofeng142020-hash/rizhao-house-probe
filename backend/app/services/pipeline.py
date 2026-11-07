@@ -308,6 +308,13 @@ def run_daily_pipeline(push: bool = True, today: date | None = None) -> dict:
     except Exception as exc:  # noqa: BLE001
         summary["errors"].append(f"community_snapshot: {exc}")
 
+    # ---------------- 全城大盘日快照（库存不断点） ----------------
+    try:
+        from .market_pulse import record_market_daily
+        summary["market_daily"] = record_market_daily(today)
+    except Exception as exc:  # noqa: BLE001
+        summary["errors"].append(f"market_daily: {exc}")
+
     if sender:
         try:
             for mv in watched_moves():
@@ -419,12 +426,28 @@ def build_weekly_report(week_start: date | None = None) -> dict:
         "new_comparable": query_all(
             """
             SELECT e.* FROM anomaly_event e
-            WHERE e.event_date >= ? AND e.event_type IN ('deep_dip','sudden_drop','auction_deal')
+            WHERE e.event_date >= ? AND e.event_type IN
+                  ('deep_dip','sudden_drop','auction_deal','auction_result')
             ORDER BY e.drop_pct DESC LIMIT 20
             """,
             ((today - timedelta(days=7)).isoformat(),),
         ),
     }
+    # 市场大盘摘要：库存/中位价/新增/下架/去化近似，让周报不只看单套房源。
+    try:
+        from .market_pulse import market_overview
+        mkt = market_overview(90)
+        report["market"] = {
+            "current": mkt.get("current"),
+            "change_7d": mkt.get("change_7d"),
+            "change_30d": mkt.get("change_30d"),
+            "new_7d": mkt.get("new_7d"),
+            "delist_7d": mkt.get("delist_7d"),
+            "clearance_months": mkt.get("clearance_months"),
+            "clearance_note": mkt.get("clearance_note"),
+        }
+    except Exception:  # noqa: BLE001 大盘摘要失败不影响周报主体
+        logger.warning("周报追加市场大盘失败", exc_info=True)
     with get_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO weekly_report (week_start, content_json) VALUES (?,?)",

@@ -106,6 +106,9 @@ class Settings:
     AMAP_SECURITY_CODE: str = os.getenv("AMAP_SECURITY_CODE", "")  # JS API 2.0 安全密钥 jscode（2021-12 后申请必配）
     CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 
+    # ---- 站点对外地址（企微/站内通知里生成「一键恢复」深链用；留空则只写页面名） ----
+    SITE_BASE_URL: str = os.getenv("SITE_BASE_URL", "").rstrip("/")
+
     # ---- 评分模型可调参数 ----
     SCORE_MIN_SAMPLE: int = int(os.getenv("SCORE_MIN_SAMPLE", "3"))    # 可比样本低于此值降级置信度
     DEEP_DIP_PCT: float = float(os.getenv("DEEP_DIP_PCT", "0.12"))     # 深跌阈值 12%

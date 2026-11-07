@@ -28,6 +28,44 @@
       <strong>先质疑，再判断：</strong>下面每一条都只是「值得看一下」的候选，不是推荐。挂牌价 ≠ 成交价，捡漏分仅作观察参考，最终以实地尽调为准。
     </div>
 
+    <!-- 市场大盘：全城口径的库存 / 中位价 / 新增 / 下架，判断该不该着急买 -->
+    <div v-if="market" class="card card-pad section-gap">
+      <div class="card-title">
+        市场大盘
+        <span class="hint">全城真实采集口径 · 下架≠成交，仅作活跃度代理</span>
+      </div>
+      <template v-if="market.points && market.current && market.current.listing_n">
+        <div class="market-stats">
+          <div class="ms-item">
+            <div class="ms-label">在售总量</div>
+            <div class="ms-value">{{ market.current?.listing_n || 0 }} <span class="ms-unit">套</span></div>
+          </div>
+          <div class="ms-item">
+            <div class="ms-label">中位挂牌单价</div>
+            <div class="ms-value">{{ Math.round(market.current?.median_unit || 0).toLocaleString() }} <span class="ms-unit">元/㎡</span></div>
+            <div class="ms-sub" :class="signClass(market.change_7d)">近7天 {{ fmt.signed(market.change_7d) }}</div>
+          </div>
+          <div class="ms-item">
+            <div class="ms-label">近 7 天新增</div>
+            <div class="ms-value">{{ market.new_7d || 0 }} <span class="ms-unit">套</span></div>
+          </div>
+          <div class="ms-item">
+            <div class="ms-label">近 7 天下架</div>
+            <div class="ms-value">{{ market.delist_7d || 0 }} <span class="ms-unit">套</span></div>
+          </div>
+          <div class="ms-item">
+            <div class="ms-label">去化近似</div>
+            <div class="ms-value">{{ market.clearance_months != null ? market.clearance_months : '—' }} <span class="ms-unit">个月</span></div>
+          </div>
+        </div>
+        <Chart :option="marketChart" height="230px" />
+        <div class="tiny" style="color:var(--muted);margin-top:6px">{{ market.clearance_note }}</div>
+      </template>
+      <div v-else class="empty-state" style="padding:14px 0">
+        暂无真实采集房源，大盘为空（演示样本不计入）。接入抓取并跑过一天后这里就会出现趋势。
+      </div>
+    </div>
+
     <!-- 快捷入口：把「按小区 / 按面积段 / 按新房」三条找房路径直接摆出来 -->
     <div class="quick-grid section-gap">
       <div class="quick-card" @click="$router.push('/map')">
@@ -142,8 +180,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Chart from '../components/Chart.vue'
 import LeakCard from '../components/LeakCard.vue'
-import { api } from '../api'
-import { districtOption, eventTypeOption } from '../charts/options'
+import { api, fmt } from '../api'
+import { districtOption, eventTypeOption, marketOption } from '../charts/options'
 
 const router = useRouter()
 const loading = ref(true)
@@ -153,6 +191,7 @@ const today = ref('')
 const listings = ref([])
 const auctions = ref([])
 const summary = ref({ by_type: [] })
+const market = ref(null)
 
 const counts = computed(() => dashboard.value?.counts || {})
 const recentEvents = computed(() => (dashboard.value?.recent_events || []).slice(0, 6))
@@ -163,6 +202,11 @@ const districtChart = computed(() =>
   dashboard.value?.districts?.length ? districtOption(dashboard.value.districts) : null
 )
 const eventChart = computed(() => (summary.value.by_type?.length ? eventTypeOption(summary.value.by_type) : null))
+const marketChart = computed(() => (market.value?.series?.length ? marketOption(market.value.series) : null))
+function signClass(v) {
+  if (v === null || v === undefined) return ''
+  return Number(v) > 0 ? 'up' : Number(v) < 0 ? 'down' : ''
+}
 
 function open(item) {
   if (item.kind === 'auction') router.push(`/auction/${item.id}`)
@@ -176,14 +220,15 @@ function openEvent(e) {
 async function load() {
   loading.value = true
   try {
-    const [dash, todayData, sum] = await Promise.all([
-      api.dashboard(), api.today({ limit: 12 }), api.anomalySummary(7),
+    const [dash, todayData, sum, mkt] = await Promise.all([
+      api.dashboard(), api.today({ limit: 12 }), api.anomalySummary(7), api.marketOverview(180),
     ])
     dashboard.value = dash
     today.value = todayData.date
     listings.value = todayData.listings
     auctions.value = todayData.auctions
     summary.value = sum
+    market.value = mkt
   } catch (e) {
     ElMessage.error('加载失败：' + e.message)
   } finally {
@@ -195,6 +240,15 @@ onMounted(load)
 </script>
 
 <style scoped>
+.market-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 8px; }
+.ms-item { background: var(--panel-soft, rgba(148,163,184,.08)); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.ms-label { font-size: 11.5px; color: var(--muted); }
+.ms-value { font-size: 18px; font-weight: 700; margin-top: 2px; }
+.ms-unit { font-size: 11px; font-weight: 400; color: var(--muted); }
+.ms-sub { font-size: 11px; margin-top: 2px; color: var(--muted); }
+.ms-sub.up { color: var(--red, #e11d48); }
+.ms-sub.down { color: var(--good, #059669); }
+@media (max-width: 860px) { .market-stats { grid-template-columns: 1fr 1fr; } }
 .quick-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .quick-card {
   display: flex; align-items: center; gap: 10px; padding: 11px 13px;

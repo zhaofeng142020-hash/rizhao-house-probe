@@ -590,3 +590,57 @@ def official_deals(kind: str = "sign"):
         return {"ok": True, **fetch_official_deals(kind, 1)}
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+# --------------------------------------------------------------------------
+# 法拍成交结果回填：日照没有公开成交页，法拍是少数能拿到「真实成交价」的
+# 公开渠道。拍卖结束后把成交价录进来，就成了真实价格锚点（可手动/CSV 回填）。
+# --------------------------------------------------------------------------
+class AuctionResultIn(BaseModel):
+    deal_price: float
+    deal_date: str | None = None
+
+
+@router.post("/auctions/{auction_id}/result")
+def save_auction_result(auction_id: int, payload: AuctionResultIn):
+    """回填某场法拍的实际成交价，并写入一条 auction_result 异动（真实锚点）。"""
+    from ..db import execute, query_one
+    from ..services.anomaly import build_event_key
+    from ..services.pipeline import insert_event
+
+    au = query_one("SELECT * FROM auction WHERE id=?", (auction_id,))
+    if not au:
+        raise HTTPException(404, "法拍房源不存在")
+    if payload.deal_price is None or float(payload.deal_price) <= 0:
+        raise HTTPException(400, "成交价必须为正数")
+    deal_price = float(payload.deal_price)
+    deal_date = (payload.deal_date or date.today().isoformat())[:10]
+    execute(
+        "UPDATE auction SET deal_price=?,deal_date=?,status='sold' WHERE id=?",
+        (deal_price, deal_date, auction_id),
+    )
+    appraisal = float(au.get("appraisal_price") or 0)
+    start = float(au.get("start_price") or 0)
+    area = float(au.get("area") or 0)
+    detail = {
+        "deal_price": deal_price,
+        "deal_date": deal_date,
+        "deal_discount_pct": round((1 - deal_price / appraisal) * 100, 1) if appraisal else None,
+        "over_start_pct": round((deal_price - start) / start * 100, 1) if start else None,
+    }
+    insert_event({
+        "event_key": build_event_key("auction_result", "auction", auction_id, date.today()),
+        "event_date": date.today().isoformat(),
+        "target_type": "auction",
+        "target_id": auction_id,
+        "community_name": au.get("community_name"),
+        "district": au.get("district"),
+        "event_type": "auction_result",
+        "severity": "white",
+        "total_price": deal_price,
+        "unit_price": round(deal_price / area) if area else None,
+        "ref_unit_price": au.get("comparable_unit_price"),
+        "drop_pct": round(-(detail["deal_discount_pct"] or 0) / 100, 4),
+        "detail": detail,
+    })
+    return {"ok": True, "auction_id": auction_id, **detail}

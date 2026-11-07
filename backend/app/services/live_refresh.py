@@ -381,6 +381,18 @@ def refresh_all(pages: int | None = None) -> dict:
             logger.exception("刷新 %s 失败", key)
             out["errors"].append(f"{key}: {type(exc).__name__}: {exc}")
     out["at"] = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 市场脉搏：先用「今天确实抓到了哪些站」判定下架，再落全城日快照。
+    # 放在抓取之后、保存结果之前，刷新摘要就能顺带报出大盘数字。
+    try:
+        from . import market_pulse
+        out["delist"] = market_pulse.detect_delistings()
+        out["market"] = market_pulse.record_market_daily(
+            delist_n=out["delist"].get("marked", 0))
+    except Exception as exc:  # noqa: BLE001 大盘失败不影响抓取本身
+        logger.warning("市场脉搏刷新失败：%s", exc)
+        out["errors"].append(f"market: {type(exc).__name__}: {exc}")
+
     try:
         from . import auth
         auth.set_setting("refresh_last", _json.dumps(out, ensure_ascii=False))
@@ -418,6 +430,13 @@ def push_refresh_summary(report: dict, pipeline: dict | None = None) -> dict | N
     if pipeline:
         lines.append(f"当前在挂 {pipeline.get('listing_total') or 0} 套；"
                      f"黄级线索 {pipeline.get('yellow') or 0} 条，红级 {pipeline.get('red') or 0} 条")
+    mkt = report.get("market") or {}
+    if mkt and mkt.get("listing_n"):
+        lines.append(
+            f"大盘：在售 {mkt['listing_n']} 套，中位 {round(float(mkt.get('median_unit') or 0))} 元/㎡，"
+            f"今日新增 {mkt.get('new_n') or 0}、下架 {mkt.get('delist_n') or 0}"
+            "（下架≠成交，仅作活跃度代理）"
+        )
     if blocked:
         lines.append("提示：系统不识别验证码。请在网页端完成一次验证，"
                      "会话会自动同步，之后继续每天两次自动抓取。")
@@ -450,6 +469,55 @@ def check_session(key: str) -> dict:
     except CaptchaBlocked:
         return {"key": key, "has_cookie": True, "ok": False,
                 "note": "仍被要求人机验证：请在浏览器点一次验证后重新同步会话"}
+
+
+# --------------------------------------------------------------------------
+# 会话自愈：每天自检一次，失效就主动提醒（带恢复入口），不再盲目重试
+# --------------------------------------------------------------------------
+def session_health() -> list[dict]:
+    """逐个来源自检会话，返回全部结果（供管理台/定时任务用）。"""
+    out: list[dict] = []
+    for key in ("ke", "anjuke", "wuba"):
+        try:
+            out.append(check_session(key))
+        except Exception as exc:  # noqa: BLE001 单源自检异常不拖垮其它源
+            out.append({"key": key, "ok": False, "has_cookie": False,
+                        "note": f"自检失败：{type(exc).__name__}: {exc}"})
+    return out
+
+
+def push_session_alert(bad: list[dict] | None = None) -> dict | None:
+    """只对「本来存过 Cookie、现在失效」的来源推送恢复提醒。
+
+    从没配过 Cookie 的来源不打扰；这样通知只在真正需要人工点一次时出现。
+    """
+    from ..config import settings
+
+    bad = bad if bad is not None else session_health()
+    need = [b for b in bad if b.get("has_cookie") and not b.get("ok")]
+    if not need:
+        return None
+    labels = {"ke": "贝壳", "anjuke": "安居客", "wuba": "58同城"}
+    names = "、".join(labels.get(b["key"], b["key"]) for b in need)
+    lines = [
+        "【会话需要恢复】" + names,
+        "以下来源的登录会话已失效，今日自动抓取会跳过它们（其余来源照常刷新）：",
+    ]
+    for b in need:
+        lines.append(f"· {labels.get(b['key'], b['key'])}：{b.get('note') or '会话失效'}")
+    site = getattr(settings, "SITE_BASE_URL", "") or ""
+    where = site or "网页端「房源来源」页"
+    lines.append(f"恢复：打开 {where}，按提示在浏览器过一次验证，扩展会自动同步会话。")
+    lines.append("恢复后无需其它操作，下一次定时刷新会继续。系统不识别、不破解验证码。")
+    text = "\n".join(lines)
+    from .alert_sender import AlertSender
+    try:
+        return AlertSender().send_message(
+            {"title": "会话需要恢复", "text": text, "markdown": text, "score": 100},
+            "session", int(time.time()), "yellow", 0, force=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("会话失效推送失败：%s", exc)
+        return None
 
 
 # --------------------------------------------------------------------------
