@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# 安全底线：真实凭据 / 会话 Cookie / 运行数据一律不入库。
+# 公开仓库一旦 push，事后删除也仍留在 git 历史里，所以必须在首次提交前挡住。
+# ---------------------------------------------------------------------------
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_cookies.json
+*cookie*.json
+admin_token.txt
+session_cookie.txt
+
+# 本地运行数据（SQLite、抓取缓存、Chrome 调试 profile、备份）
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+backups/
+logs/
+*.log
+chrome-profile-test/
+*.pma
+
+# 平台产物
+*.genie
+.wbapp_*.genie
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 说明：backend/app/webui 是已构建的前端产物，故意保留 ——
+# clone 后不必装 Node，直接 python run.py 就能单端口跑起来。
+

@@ -1,0 +1,225 @@
+<!-- 首页「今日可留意」：先给红黄线索，再给板块与异动概览 -->
+<template>
+  <div>
+    <div class="stat-grid section-gap">
+      <div class="stat accent-red">
+        <div class="stat-label">🔴 重点留意</div>
+        <div class="stat-value">{{ counts.red || 0 }}</div>
+        <div class="stat-sub">分数≥75 且风险低，建议 48h 内核实</div>
+      </div>
+      <div class="stat accent-yellow">
+        <div class="stat-label">🟡 建议观察</div>
+        <div class="stat-value">{{ counts.yellow || 0 }}</div>
+        <div class="stat-sub">进观察清单，先电话后跑腿</div>
+      </div>
+      <div class="stat accent-brand">
+        <div class="stat-label">近 7 天异动</div>
+        <div class="stat-value">{{ counts.events_7d || 0 }}</div>
+        <div class="stat-sub">突发事件 + 法拍折扣合计</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">在挂房源 / 观察中</div>
+        <div class="stat-value">{{ counts.listings || 0 }} <span style="font-size:14px;color:var(--muted)">/ {{ counts.watched || 0 }}</span></div>
+        <div class="stat-sub">共 {{ counts.communities || 0 }} 个小区 · {{ counts.auctions || 0 }} 条法拍</div>
+      </div>
+    </div>
+
+    <div class="disclaimer section-gap">
+      <strong>先质疑，再判断：</strong>下面每一条都只是「值得看一下」的候选，不是推荐。挂牌价 ≠ 成交价，捡漏分仅作观察参考，最终以实地尽调为准。
+    </div>
+
+    <!-- 快捷入口：把「按小区 / 按面积段 / 按新房」三条找房路径直接摆出来 -->
+    <div class="quick-grid section-gap">
+      <div class="quick-card" @click="$router.push('/map')">
+        <div class="q-icon">🗺️</div>
+        <div class="q-body">
+          <div class="q-title">小区地图</div>
+          <div class="q-desc">一眼看到小区在哪、贵不贵、卖得动不动</div>
+        </div>
+        <div class="q-arrow">→</div>
+      </div>
+      <div class="quick-card" @click="$router.push('/area')">
+        <div class="q-icon">📐</div>
+        <div class="q-body">
+          <div class="q-title">改善 120-150㎡</div>
+          <div class="q-desc">你重点关注的面积段，二手 + 法拍 + 新房一起看</div>
+        </div>
+        <div class="q-arrow">→</div>
+      </div>
+      <div class="quick-card" @click="$router.push('/newhomes')">
+        <div class="q-icon">🏗️</div>
+        <div class="q-body">
+          <div class="q-title">新房倒挂</div>
+          <div class="q-desc">扣掉装修与得房率之后，新房到底便不便宜</div>
+        </div>
+        <div class="q-arrow">→</div>
+      </div>
+      <div class="quick-card" @click="$router.push('/admin')">
+        <div class="q-icon">⚙️</div>
+        <div class="q-body">
+          <div class="q-title">管理台</div>
+          <div class="q-desc">企业微信推送配置 · 数据更新状态 · 权限</div>
+        </div>
+        <div class="q-arrow">→</div>
+      </div>
+    </div>
+
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1 1 68%">
+        <div class="card card-pad">
+          <div class="card-title">
+            今日可留意
+            <span class="hint">{{ today }}</span>
+            <el-radio-group v-model="gradeFilter" size="small" style="margin-left:auto">
+              <el-radio-button value="">全部</el-radio-button>
+              <el-radio-button value="red">🔴 重点</el-radio-button>
+              <el-radio-button value="yellow">🟡 观察</el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <el-skeleton v-if="loading" :rows="6" animated />
+          <div v-else>
+            <div v-if="filteredListings.length" class="grid-cards">
+              <LeakCard
+                v-for="item in filteredListings"
+                :key="'l' + item.id"
+                :item="item"
+                @open="open"
+              />
+            </div>
+            <div v-else class="empty-state">当前筛选条件下没有挂牌房源；试试切到「全部」或放宽阈值</div>
+
+            <template v-if="auctions.length">
+              <div class="divider"></div>
+              <div class="card-title" style="margin-bottom:10px">
+                法拍机会
+                <span class="hint">折扣按到手价计算，不是起拍价</span>
+              </div>
+              <div class="grid-cards">
+                <LeakCard
+                  v-for="item in auctions"
+                  :key="'a' + item.id"
+                  :item="{ ...item, kind: 'auction' }"
+                  @open="open"
+                />
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 0 0 340px;display:flex;flex-direction:column;gap:16px">
+        <div class="card card-pad">
+          <div class="card-title">板块中位单价 / 流动性 <span class="hint">灰色=扩展区</span></div>
+          <Chart :option="districtChart" height="240px" />
+        </div>
+
+        <div class="card card-pad">
+          <div class="card-title">近 7 天异动类型 <span class="hint">红/黄/灰=最高级别</span></div>
+          <Chart :option="eventChart" height="220px" />
+        </div>
+
+        <div class="card card-pad">
+          <div class="card-title">最新异动</div>
+          <div v-for="e in recentEvents" :key="e.id" class="recent-row" @click="openEvent(e)">
+            <span class="tag" :class="e.severity === 'red' ? 'danger' : e.severity === 'yellow' ? 'warn' : ''">
+              {{ e.event_label }}
+            </span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              {{ e.community_name }}
+            </span>
+            <span class="mono tiny" style="color:var(--muted)">{{ e.drop_pct ? (e.drop_pct * 100).toFixed(1) + '%' : '' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import Chart from '../components/Chart.vue'
+import LeakCard from '../components/LeakCard.vue'
+import { api } from '../api'
+import { districtOption, eventTypeOption } from '../charts/options'
+
+const router = useRouter()
+const loading = ref(true)
+const gradeFilter = ref('')
+const dashboard = ref(null)
+const today = ref('')
+const listings = ref([])
+const auctions = ref([])
+const summary = ref({ by_type: [] })
+
+const counts = computed(() => dashboard.value?.counts || {})
+const recentEvents = computed(() => (dashboard.value?.recent_events || []).slice(0, 6))
+const filteredListings = computed(() =>
+  gradeFilter.value ? listings.value.filter((x) => x.grade === gradeFilter.value) : listings.value
+)
+const districtChart = computed(() =>
+  dashboard.value?.districts?.length ? districtOption(dashboard.value.districts) : null
+)
+const eventChart = computed(() => (summary.value.by_type?.length ? eventTypeOption(summary.value.by_type) : null))
+
+function open(item) {
+  if (item.kind === 'auction') router.push(`/auction/${item.id}`)
+  else router.push(`/listing/${item.id}`)
+}
+function openEvent(e) {
+  if (e.target_type === 'auction') router.push(`/auction/${e.target_id}`)
+  else router.push(`/listing/${e.target_id}`)
+}
+
+async function load() {
+  loading.value = true
+  try {
+    const [dash, todayData, sum] = await Promise.all([
+      api.dashboard(), api.today({ limit: 12 }), api.anomalySummary(7),
+    ])
+    dashboard.value = dash
+    today.value = todayData.date
+    listings.value = todayData.listings
+    auctions.value = todayData.auctions
+    summary.value = sum
+  } catch (e) {
+    ElMessage.error('加载失败：' + e.message)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
+</script>
+
+<style scoped>
+.quick-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.quick-card {
+  display: flex; align-items: center; gap: 10px; padding: 11px 13px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 11px;
+  cursor: pointer; transition: border-color .15s, transform .15s;
+}
+.quick-card:hover { border-color: rgba(14, 116, 144, .45); transform: translateY(-1px); }
+.q-icon { font-size: 20px; flex: 0 0 auto; }
+.q-body { min-width: 0; }
+.q-title { font-size: 13px; font-weight: 700; }
+.q-desc { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 1px; }
+.q-arrow { margin-left: auto; color: var(--muted); font-size: 13px; }
+
+.recent-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 0;
+  border-bottom: 1px dashed var(--line); font-size: 12.5px; cursor: pointer;
+}
+.recent-row:last-child { border-bottom: none; }
+.recent-row:hover { color: var(--brand); }
+
+@media (max-width: 1080px) {
+  .quick-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 860px) {
+  .quick-grid { grid-template-columns: 1fr; gap: 8px; }
+  .q-desc { display: none; }
+}
+</style>

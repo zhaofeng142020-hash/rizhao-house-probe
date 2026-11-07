@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  body { width: 300px; font: 13px/1.6 system-ui, "Microsoft YaHei", sans-serif; padding: 12px; margin: 0; }
+  h3 { margin: 0 0 8px; font-size: 15px; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:6px;
+         border:1px solid #e6e9ef; border-radius:8px; padding:8px 9px; margin:6px 0; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#cbd5e1; flex:0 0 auto; }
+  .dot.ok { background:#059669; } .dot.bad { background:#e11d48; }
+  .name { font-weight:600; } .note { color:#6b7786; font-size:11px; }
+  button { font:inherit; padding:5px 10px; border:1px solid #0e7490; color:#0e7490;
+           background:#fff; border-radius:6px; cursor:pointer; }
+  button:hover { background:#f0f9fb; }
+  .wide { width:100%; margin-top:9px; }
+  a { color:#0e7490; }
+  .tip { margin-top:10px; background:#fff8ec; border:1px solid #f2dfc0; border-radius:8px;
+         padding:8px 10px; font-size:11.5px; color:#7a5a24; }
+</style>
+</head>
+<body>
+  <h3>日照房价探针 · 会话桥</h3>
+  <div id="list"></div>
+  <button class="wide" id="syncAll">立即同步全部会话</button>
+  <button class="wide" id="open58">打开 58 二手房列表</button>
+  <button class="wide" id="pushPage">回传当前 58 页面的房源</button>
+  <button class="wide" id="pullWuba">打开 58 页面（自动回传）</button>
+  <div id="pushMsg" class="note"></div>
+  <button class="wide" id="opts">设置</button>
+  <div class="tip">扩展只负责把你正常访问后的会话同步到站点。之后由<b>服务端</b>每天
+  07:30 / 19:30 低频抓取首屏、自动重算并推送结果，不用再跑程序，
+  也不会在后台反复打开页面触发「访问过于频繁」验证。若真遇到验证码，请自己在网页上完成。</div>
+  <script src="popup.js"></script>
+</body>
+</html>

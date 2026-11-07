@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>会话桥设置</title>
+<style>
+  body { font: 14px/1.7 system-ui, "Microsoft YaHei", sans-serif; max-width: 620px; margin: 30px auto; padding: 0 18px; }
+  h2 { font-size: 19px; }
+  label { display:block; margin:14px 0 4px; font-weight:600; }
+  input { width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #dcdfe6; border-radius:6px; font:inherit; }
+  .hint { color:#6b7786; font-size:12px; }
+  button { margin-top:18px; padding:8px 20px; background:#0e7490; color:#fff; border:0;
+           border-radius:6px; font:inherit; cursor:pointer; }
+  #msg { margin-top:10px; color:#059669; }
+  .box { background:#f6f9fb; border:1px solid #e6e9ef; border-radius:9px; padding:12px 16px; margin-top:20px; font-size:13px; }
+</style>
+</head>
+<body>
+  <h2>会话桥设置</h2>
+  <p class="hint">填一次即可。扩展会在你完成网页验证后自动把会话同步到站点，之后全自动。</p>
+
+  <label>站点地址</label>
+  <input id="base" placeholder="https://rizhao-house-radar.app.workbuddy.host">
+  <div class="hint">本地调试可填 http://127.0.0.1:8765</div>
+
+  <label>分享码（sharecode）</label>
+  <input id="sharecode" placeholder="线上链接 ?sharecode= 后面的那串">
+  <div class="hint">线上网关要求 API 请求也带这个参数；本地可留空</div>
+
+  <label>管理口令</label>
+  <input id="token" type="password" placeholder="网站管理口令">
+  <div class="hint">只保存在这台电脑的浏览器里，不会发给第三方</div>
+
+  <label><input id="auto" type="checkbox" checked style="width:auto"> 自动同步（Cookie 变化时立即同步，每 30 分钟兜底）</label>
+
+  <button id="save">保存</button>
+  <div id="msg"></div>
+
+  <div class="box">
+    <b>使用步骤</b><br>
+    1. 保存设置后，打开 <a href="https://rizhao.58.com/ershoufang/" target="_blank">58 同城日照二手房</a>；
+    如果出现滑块/验证码，正常手动完成。<br>
+    2. 能看到房源列表后，扩展会自动同步会话（也可以点弹窗里的「立即同步」）。<br>
+    3. 之后站点每天 07:30 / 19:30 自动抓取、重算，并把「新增/调价/线索」推送给你。
+    会话失效时推送里会提示你再点一次验证。<br>
+    <span class="hint">扩展不识别、不破解任何验证码，验证码始终由你本人完成。</span>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

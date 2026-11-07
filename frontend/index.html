@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover：让 env(safe-area-inset-*) 生效，刘海屏/全面屏不被遮挡 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- 告知浏览器同时支持浅色背景，避免部分安卓浏览器强制反色 -->
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#0f2b36" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>日照房价探针 · 捡漏雷达</title>
+    <meta name="description" content="面向日照市区自住购房者的房价监测与捡漏预警系统：先把低价当嫌疑，再判断是否值得看。" />
+    <style>
+      /* 首屏骨架：避免 JS 加载完成前出现整页白屏 */
+      html, body { margin: 0; background: #f5f7fa; }
+      #app:empty::after {
+        content: '正在加载日照房价探针…';
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        color: #6b7786; font-size: 13px;
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

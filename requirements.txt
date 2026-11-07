@@ -1,0 +1,23 @@
+# ---- Web 框架 ----
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+
+# ---- 数据库（SQLite 为标准库，此处只留迁移用的可选依赖）----
+# psycopg[binary]==3.2.3   # 后期切 PostgreSQL 时打开
+
+# ---- 抓取 ----
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.3.0
+pandas==2.2.3
+
+# ---- 调度 ----
+APScheduler==3.10.4
+
+# ---- 兜底渲染（部分站点需要 JS 渲染时启用）----
+# playwright==1.49.1
+
+# ---- 测试 ----
+pytest==8.3.4
+httpx==0.28.1
