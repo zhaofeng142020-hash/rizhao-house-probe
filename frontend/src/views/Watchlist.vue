@@ -31,6 +31,28 @@
       </div>
     </div>
 
+    <!-- 关注小区横向对比：把曲线叠在一张图上看谁在跌、谁横盘 -->
+    <div v-if="commItems.length >= 2" class="card card-pad section-gap">
+      <div class="card-title">
+        关注小区横向对比
+        <span class="hint">中位挂牌单价（元/㎡）· 曲线各自有观测点才画，缺口表示当天无快照</span>
+      </div>
+      <Chart :option="compareChart" height="280px" />
+      <div class="compare-row compare-head">
+        <span>小区</span><span>板块</span><span>当前中位</span><span>加入时</span><span>变化</span><span>观测点</span>
+      </div>
+      <div v-for="c in commItems" :key="c.id" class="compare-row" style="cursor:pointer" @click="open(c)">
+        <span class="strong small">{{ c.community_name }}</span>
+        <span class="tiny muted">{{ c.district }}</span>
+        <span class="mono small">{{ fmt.money(c.last_price) }}</span>
+        <span class="mono tiny muted">{{ fmt.money(c.base_price) }}</span>
+        <span class="mono tiny" :style="{ color: c.change_pct < 0 ? 'var(--good)' : c.change_pct > 0 ? 'var(--red)' : 'var(--muted)' }">
+          {{ c.change_pct ? (c.change_pct > 0 ? '+' : '') + fmt.pct(c.change_pct) : '—' }}
+        </span>
+        <span class="tiny muted">{{ (c.curve || []).length }}</span>
+      </div>
+    </div>
+
     <!-- 清单 -->
     <div class="card card-pad">
       <div class="card-title">
@@ -92,7 +114,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Chart from '../components/Chart.vue'
@@ -104,6 +126,34 @@ const loading = ref(true)
 const items = ref([])
 const report = ref({})
 const statusOptions = ref(['watching', 'contacted', 'viewed', 'rejected', 'done'])
+
+// ---- 关注小区横向对比 ----
+const commItems = computed(() => items.value.filter((x) => x.target_type === 'community'))
+const compareChart = computed(() => {
+  const list = commItems.value.filter((c) => (c.curve || []).length > 1)
+  if (list.length < 2) return null
+  const dateSet = new Set()
+  for (const c of list) for (const p of c.curve) dateSet.add(p.date)
+  const dates = [...dateSet].sort()
+  const COLORS = ['#0e7490', '#d97706', '#e11d48', '#059669', '#7c3aed', '#64748b']
+  return {
+    grid: { left: 10, right: 14, top: 34, bottom: 12, containLabel: true },
+    legend: { top: 0, left: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 11 } },
+    tooltip: { trigger: 'axis', valueFormatter: (v) => (v == null ? '—' : Number(v).toLocaleString() + ' 元/㎡') },
+    xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 10 } },
+    yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10, formatter: (v) => (v / 1000).toFixed(1) + 'k' } },
+    series: list.map((c, i) => {
+      const byDate = Object.fromEntries((c.curve || []).map((p) => [p.date, p.price]))
+      return {
+        name: c.community_name, type: 'line', smooth: true, symbolSize: 4,
+        connectNulls: true,
+        lineStyle: { color: COLORS[i % COLORS.length], width: 2 },
+        itemStyle: { color: COLORS[i % COLORS.length] },
+        data: dates.map((d) => byDate[d] ?? null),
+      }
+    }),
+  }
+})
 
 const STATUS_LABEL = {
   watching: '观察中', contacted: '已联系', viewed: '已看房', rejected: '已排除', done: '已结束',
@@ -184,6 +234,14 @@ onMounted(load)
 </script>
 
 <style scoped>
+.compare-row {
+  display: grid; grid-template-columns: 2fr 1fr 1.2fr 1.2fr 0.9fr 0.7fr;
+  gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px dashed var(--line);
+}
+.compare-row:last-child { border-bottom: none; }
+.compare-head { color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--line); }
+@media (max-width: 860px) { .compare-row { grid-template-columns: 2fr 1fr 1fr 1fr; } 
+  .compare-row > :nth-child(2), .compare-row > :nth-child(6) { display: none; } }
 .report-row {
   display: flex; align-items: center; gap: 8px; padding: 6px 0;
   border-bottom: 1px dashed var(--line); cursor: pointer; font-size: 12.5px;

@@ -133,3 +133,19 @@ def put_pref(payload: PrefIn):
 @router.get("/crawl-logs")
 def crawl_logs(limit: int = 30):
     return {"items": query_all("SELECT * FROM crawl_log ORDER BY id DESC LIMIT ?", (limit,))}
+
+
+@router.get("/rate-table")
+def rate_table(price: float = 1000000, down_ratio: float | None = None,
+               years: int | None = None, rate: float | None = None):
+    """「同月供可承受房价」：利率档位 → 同样月供能买到的总价（万元）。"""
+    from ..services.afford import rate_equivalence
+    pref = query_one("SELECT down_ratio, loan_years, loan_rate FROM user_pref WHERE id=1") or {}
+    dr = down_ratio if down_ratio is not None else float(pref.get("down_ratio") or 0.30)
+    y = int(years or pref.get("loan_years") or 30)
+    r = rate if rate is not None else float(pref.get("loan_rate") or 0.031)
+    return {
+        "base": {"price": price, "down_ratio": dr, "years": y, "rate": r},
+        "rows": rate_equivalence(price, dr, y, r),
+        "note": "以基准利率下的月供为锚，反推各利率档位同样月供可承受的总价；只算商贷等额本息，不含公积金组合贷。",
+    }

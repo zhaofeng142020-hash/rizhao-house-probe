@@ -29,6 +29,38 @@ def months_to_clear(listing_n: int, deal_90d: int) -> float | None:
     return None
 
 
+def _community_rent(community_name: str, listing_median_unit: float | None) -> dict:
+    """该小区最近一批租房样本 → 租金中位与年化租售比（无样本返回说明）。"""
+    latest = query_one("SELECT MAX(collected_date) AS d FROM rent_sample")
+    day = (latest or {}).get("d")
+    if not day:
+        return {"available": False, "note": "暂无租金样本，接入租金抓取后此处显示租售比。"}
+    rows = query_all(
+        "SELECT rent_month, rent_pm FROM rent_sample WHERE community_name=? AND collected_date=?",
+        (community_name, day),
+    )
+    if not rows:
+        return {"available": False, "note": "该小区最近一批租房样本里没有房源。"}
+    def _med(vals):
+        xs = sorted(float(v) for v in vals if v)
+        if not xs:
+            return None
+        n = len(xs)
+        return round(xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2, 1)
+    med_rent = _med([r["rent_month"] for r in rows])
+    med_pm = _med([r["rent_pm"] for r in rows])
+    yield_pct = round(med_pm * 12 / listing_median_unit * 100, 2) if (med_pm and listing_median_unit) else None
+    return {
+        "available": True,
+        "collected_date": day,
+        "sample_n": len(rows),
+        "median_rent": med_rent,
+        "median_rent_pm": med_pm,
+        "rent_yield_pct": yield_pct,
+        "note": "租售比 = 租金中位×12 ÷ 在售挂牌单价中位，横向比较用。",
+    }
+
+
 def liquidity_note(months: float | None, is_extended: int = 0) -> str:
     """把去化月数翻译成人话（自住者真正关心的「好不好脱手」）。"""
     if months is None:
@@ -309,6 +341,7 @@ def community_detail(community_id: int):
         "listings": listings,
         "watched": watched,
         "trend": trend,
+        "rent": _community_rent(c["name"], _median(units)),
         "layout_groups": layout_groups,
         "events": events,
         "nearby": nearby,

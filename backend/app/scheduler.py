@@ -101,6 +101,21 @@ def _session_check_job() -> None:
         logger.exception("会话自检失败")
 
 
+def _rent_job() -> None:
+    """每周日 03:30 抓一次贝壳日照租房页 → 租售比。低频、免验证码、免会话。"""
+    logger.info("开始每周租金刷新…")
+    try:
+        from .services.rent_pulse import refresh_rents
+        out = refresh_rents(pages=3)
+        s = out.get("summary") or {}
+        logger.info("租金刷新完成：%s 条样本，%s 个小区，全城租售比中位 %s",
+                    s.get("city", {}).get("sample_n"),
+                    len(s.get("communities") or []),
+                    s.get("city", {}).get("yield_median"))
+    except Exception:  # noqa: BLE001
+        logger.exception("每周租金刷新失败")
+
+
 def _weekly_job() -> None:
     logger.info("开始生成观察周报…")
     try:
@@ -149,6 +164,11 @@ def start_scheduler() -> BackgroundScheduler | None:
         _session_check_job, CronTrigger(hour=9, minute=10),
         id="session_check", replace_existing=True, max_instances=1, coalesce=True,
     )
+    # 每周日 03:30 租金抓取（贝壳租房页公开、免验证码、免会话）
+    _scheduler.add_job(
+        _rent_job, CronTrigger(day_of_week="sun", hour=3, minute=30),
+        id="rent_refresh", replace_existing=True, max_instances=1, coalesce=True,
+    )
     _scheduler.start()
     logger.info("调度器已启动：每日 %s 增量计算，每天 %s 刷新真实房源，每日 09:10 会话自检，每周一 08:30 观察周报",
                 settings.DAILY_RUN_AT, "、".join(refresh_times) or "（未启用）")
@@ -179,6 +199,7 @@ def job_snapshot() -> list[dict]:
                 "daily_pipeline": "每日增量计算",
                 "weekly_report": "观察周报",
                 "session_check": "会话自检",
+                "rent_refresh": "租金刷新",
             }.get(job.id, "刷新真实房源" if job.id.startswith("live_refresh") else job.id),
             "next_run": nxt.isoformat() if nxt else None,
         })

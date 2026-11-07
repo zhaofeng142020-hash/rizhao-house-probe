@@ -21,6 +21,19 @@
       </div>
     </div>
 
+    <!-- 降价时机规律：历史降价集中在几月/星期几（观察口径，不是预测） -->
+    <div v-if="timing && timing.total_drops" class="card card-pad section-gap">
+      <div class="card-title">
+        降价时机规律
+        <span class="hint">近 {{ timing.days }} 天共 {{ timing.total_drops }} 次降价 · 峰值 {{ timing.peak_month }}</span>
+      </div>
+      <div class="timing-grid">
+        <Chart :option="monthChart" height="150px" />
+        <Chart :option="weekdayChart" height="150px" />
+      </div>
+      <div class="tiny muted" style="margin-top:6px">{{ timing.note }} {{ timing.disclaimer }}</div>
+    </div>
+
     <el-tabs v-model="activeTab">
       <el-tab-pane v-for="t in tabs" :key="t.key" :name="t.key">
         <template #label>
@@ -74,6 +87,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api, fmt } from '../api'
+import Chart from '../components/Chart.vue'
 
 const router = useRouter()
 const tabs = [
@@ -103,6 +117,32 @@ const district = ref('')
 const days = ref(30)
 const includeWhite = ref(false)
 const districts = ref([])
+const timing = ref(null)
+
+const monthChart = computed(() => {
+  if (!timing.value) return null
+  return {
+    grid: { left: 8, right: 8, top: 26, bottom: 6, containLabel: true },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: timing.value.months.map((m) => m.label),
+      axisLabel: { fontSize: 9, interval: 0 }, axisTick: { show: false } },
+    yAxis: { type: 'value', show: false },
+    series: [{ type: 'bar', barWidth: '55%', data: timing.value.months.map((m) => m.n),
+      itemStyle: { color: 'rgba(14,116,144,.55)', borderRadius: [3, 3, 0, 0] } }],
+  }
+})
+const weekdayChart = computed(() => {
+  if (!timing.value) return null
+  return {
+    grid: { left: 8, right: 8, top: 26, bottom: 6, containLabel: true },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: timing.value.weekdays.map((m) => m.label),
+      axisLabel: { fontSize: 9, interval: 0 }, axisTick: { show: false } },
+    yAxis: { type: 'value', show: false },
+    series: [{ type: 'bar', barWidth: '55%', data: timing.value.weekdays.map((m) => m.n),
+      itemStyle: { color: 'rgba(217,119,6,.55)', borderRadius: [3, 3, 0, 0] } }],
+  }
+})
 
 function meta(sev) { return fmt.gradeMeta(sev) }
 function dropLabel(type) { return DROP_LABEL[type] || '幅度' }
@@ -141,11 +181,16 @@ onMounted(async () => {
   try {
     districts.value = (await api.districts()).items
   } catch (e) { /* 板块列表失败不阻塞 */ }
+  try {
+    timing.value = await api.dropTiming(365)
+  } catch (e) { /* 降价规律失败不阻塞 */ }
   load()
 })
 </script>
 
 <style scoped>
+.timing-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 12px; }
+@media (max-width: 860px) { .timing-grid { grid-template-columns: 1fr; } }
 .tab-count {
   display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 999px;
   background: var(--panel-soft); border: 1px solid var(--line);

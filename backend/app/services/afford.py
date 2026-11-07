@@ -238,3 +238,39 @@ def bargain_anchor(
         "reasons": reasons,
         "disclaimer": "仅为谈判起点，不是估值结论；真实成交价以网签与中介成交记录为准。",
     }
+
+
+def rate_equivalence(price: float, down_ratio: float, years: int,
+                     base_rate: float) -> list[dict]:
+    """「同月供可承受房价」：利率变动时，同样月供能买到多贵的房。
+
+    口径：以基准利率下的月供为锚，反推各利率档位下的可贷本金 →
+    可承受总价 = 本金 / (1 - 首付比例)。用于回答「利率降了，我够得着的房子变多了多少」。
+    """
+    price = float(price)
+    down_ratio = _clamp(float(down_ratio), 0.05, 0.9)
+    years = int(years)
+    base_rate = float(base_rate)
+    loan = price * (1 - down_ratio)
+    if loan <= 0 or years <= 0:
+        return []
+    anchor_payment = monthly_payment(loan, base_rate, years)
+    if anchor_payment <= 0:
+        return []
+
+    out = []
+    for rate_pct in range(24, 45):            # 2.4% ~ 4.4%，覆盖近年商贷区间
+        rate = rate_pct / 1000
+        # 等额本息反推本金：P = M * (1+r)^n - 1) / (r * (1+r)^n)
+        n = years * 12
+        r = rate / 12
+        factor = ((1 + r) ** n - 1) / (r * (1 + r) ** n)
+        principal = anchor_payment * factor
+        affordable = principal / (1 - down_ratio)
+        out.append({
+            "rate": round(rate, 4),
+            "monthly_payment": round(anchor_payment),
+            "affordable_price": round(affordable / 10000, 1),   # 万元
+            "diff_vs_base_wan": round((affordable - price) / 10000, 1),
+        })
+    return out

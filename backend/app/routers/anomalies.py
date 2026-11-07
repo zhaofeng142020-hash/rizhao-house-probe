@@ -12,6 +12,13 @@ from . import common
 router = APIRouter(prefix="/api/anomalies", tags=["异动"])
 
 
+@router.get("/drop-timing")
+def drop_timing(days: int = 365):
+    """降价时机规律：近 N 天降价按月份/星期的分布（观察口径）。"""
+    from ..services.anomaly import drop_timing as _timing
+    return _timing(max(90, min(days, 1095)))
+
+
 @router.get("")
 def list_events(
     event_type: str | None = Query(None, description="sudden_drop/deep_dip/long_listed/miskill/board_divergence/new_home/auction_deal"),

@@ -85,6 +85,28 @@
       </div>
     </div>
 
+    <!-- 数据质量面板：每个来源断没断、断了几天，一眼可见 -->
+    <div v-if="ov.quality && (ov.quality.sources || []).length" class="card card-pad section-gap">
+      <div class="card-title">
+        数据质量
+        <span class="hint">各来源最近一次成功 / 近 7 天失败 / 验证码状态，如实显示</span>
+      </div>
+      <div class="quality-row quality-head">
+        <span>来源</span><span>在售样本</span><span>最近出现在抓取里</span><span>近7天失败</span><span>验证码</span>
+      </div>
+      <div v-for="q in ov.quality.sources" :key="q.source" class="quality-row">
+        <span class="strong small">{{ q.label }}</span>
+        <span class="mono tiny">{{ q.listing_n ?? '—' }}</span>
+        <span class="mono tiny">{{ q.last_seen || '—' }}</span>
+        <span class="mono tiny" :style="{ color: q.failed_7d ? '#b45309' : 'var(--muted)' }">{{ q.failed_7d || 0 }}</span>
+        <span>
+          <span v-if="q.captcha_blocked_now" class="tag" style="color:#b45309">被拦截</span>
+          <span v-else class="tiny muted">正常</span>
+        </span>
+      </div>
+      <div class="tiny muted" style="margin-top:6px;line-height:1.7">{{ ov.quality.note }}</div>
+    </div>
+
     <!-- 来源目录 -->
     <div class="card card-pad section-gap">
       <div class="card-title">
@@ -521,6 +543,16 @@ onMounted(load)
 </script>
 
 <style scoped>
+.quality-row {
+  display: grid; grid-template-columns: 1.4fr 1fr 1.4fr 0.9fr 0.9fr;
+  gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px dashed var(--line);
+}
+.quality-row:last-of-type { border-bottom: none; }
+.quality-head { color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--line); }
+@media (max-width: 700px) {
+  .quality-row { grid-template-columns: 1.2fr 1fr 1fr; }
+  .quality-row > :nth-child(3), .quality-row > :nth-child(4) { display: none; }
+}
 .truth-card { border-left: 3px solid var(--brand); }
 .truth-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 12px 0 14px; }
 .truth-cell { background: var(--panel-soft, #f6f9fb); border-radius: 9px; padding: 10px 12px; }
