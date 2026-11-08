@@ -91,6 +91,9 @@ export const api = {
   rateTable: (params) => request(`/api/meta/rate-table${qs(params)}`),
   dropTiming: (days) => request(`/api/anomalies/drop-timing${qs({ days })}`),
   refreshRents: () => request('/api/admin/refresh-rents?pages=3', { method: 'POST', body: '{}' }),
+  // 真实成交锚点（法拍成交价，人工/CSV 回填口径）
+  dealSummary: (days) => request(`/api/market/deals${qs({ days })}`),
+  auctionResults: (status = 'sold') => request(`/api/auctions${qs({ status })}`),
 
   // ---- 数据来源 ----
   sourceOverview: () => request('/api/sources'),
@@ -132,6 +135,10 @@ export const api = {
   // ---- 法拍 ----
   auctions: (params) => request(`/api/auctions${qs(params)}`),
   auction: (id) => request(`/api/auctions/${id}`),
+  saveAuctionResult: (id, data) =>
+    request(`/api/admin/auctions/${id}/result`, { method: 'POST', body: JSON.stringify(data) }),
+  importAuctionResults: (payload) =>
+    request('/api/admin/auctions/results/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   // ---- 观察清单 ----
   watchlist: () => request('/api/watchlist'),

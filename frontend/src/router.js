@@ -12,6 +12,7 @@ const routes = [
   { path: '/community/:id', name: 'community', component: () => import('./views/CommunityDetail.vue'), meta: { title: '小区详情' } },
   { path: '/listing/:id', name: 'listing', component: () => import('./views/ListingDetail.vue'), meta: { title: '房源详情' } },
   { path: '/auction/:id', name: 'auction', component: () => import('./views/AuctionDetail.vue'), meta: { title: '法拍详情' } },
+  { path: '/deals', name: 'deals', component: () => import('./views/Deals.vue'), meta: { title: '成交锚点' } },
   { path: '/watchlist', name: 'watchlist', component: () => import('./views/Watchlist.vue'), meta: { title: '观察清单' } },
   { path: '/settings', name: 'settings', component: () => import('./views/Settings.vue'), meta: { title: '推送设置' } },
   { path: '/admin', name: 'admin', component: () => import('./views/Admin.vue'), meta: { title: '管理台' } },

@@ -201,11 +201,23 @@ def data_quality() -> dict:
             "failed_7d": v.get("failed_7d", 0),
             "captcha_blocked_now": key in captcha_sources,
         })
+    # 真实成交锚点覆盖度：法拍成交是唯一能拿到真实成交价的渠道，
+    # 这里如实报「攒了多少条」，演示样本排除，不跟挂牌数据量混算。
+    deal_where = (
+        "FROM auction WHERE deal_price IS NOT NULL AND deal_price > 0 "
+        "AND COALESCE(source_kind, 'demo') <> 'demo'"
+    )
+    deal_anchor_n = int(scalar(f"SELECT COUNT(*) {deal_where}", default=0))
+    deal_latest = scalar(f"SELECT MAX(deal_date) {deal_where}", default=None)
+
     return {
         "sources": items,
         "captcha_blocked_now": captcha_sources,
+        "deal_anchor_n": deal_anchor_n,
+        "deal_latest": deal_latest,
         "note": "last_seen=该来源房源最近一次出现在抓取结果里的日期；"
-                "被验证码拦截的来源当天会如实标记，不会假装抓到了数据。",
+                "被验证码拦截的来源当天会如实标记，不会假装抓到了数据。"
+                "deal_anchor_n=已回填的真实法拍成交锚点数（人工/CSV 录入，非自动采集）。",
     }
 
 

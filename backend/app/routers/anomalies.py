@@ -21,7 +21,7 @@ def drop_timing(days: int = 365):
 
 @router.get("")
 def list_events(
-    event_type: str | None = Query(None, description="sudden_drop/deep_dip/long_listed/miskill/board_divergence/new_home/auction_deal"),
+    event_type: str | None = Query(None, description="sudden_drop/deep_dip/long_listed/miskill/board_divergence/new_home/auction_deal/auction_result"),
     severity: str | None = None,
     district: str | None = None,
     days: int = Query(30, ge=1, le=365),
@@ -105,9 +105,10 @@ def today_picks(
         "ORDER BY s.score DESC, s.deviation_pct DESC LIMIT ?",
         (*params, limit),
     )
+    # 已成交（sold）的法拍仍留着历史 leak_score，不能再当成「在拍机会」推给用户
     auctions = query_all(
-        f"{common.AUCTION_SELECT} WHERE s.score IS NOT NULL AND s.grade IN ('red','yellow') "
-        "ORDER BY s.score DESC LIMIT ?",
+        f"{common.AUCTION_SELECT} WHERE a.status='active' AND s.score IS NOT NULL "
+        "AND s.grade IN ('red','yellow') ORDER BY s.score DESC LIMIT ?",
         (max(3, limit // 3),),
     )
     return {
@@ -119,7 +120,7 @@ def today_picks(
 
 @router.get("/ranking")
 def ranking(limit: int = Query(20, ge=1, le=100), include_white: bool = False):
-    """捡漏排行：二手房 + 法拍混排。"""
+    """捡漏排行：二手房 + 法拍混排（只排在拍标的）。"""
     grade_cond = "" if include_white else " AND s.grade IN ('red','yellow')"
     listings = query_all(
         f"{common.LISTING_SELECT} WHERE l.status='active' AND s.score IS NOT NULL{grade_cond} "
@@ -127,7 +128,7 @@ def ranking(limit: int = Query(20, ge=1, le=100), include_white: bool = False):
         (limit,),
     )
     auctions = query_all(
-        f"{common.AUCTION_SELECT} WHERE s.score IS NOT NULL{grade_cond} "
+        f"{common.AUCTION_SELECT} WHERE a.status='active' AND s.score IS NOT NULL{grade_cond} "
         "ORDER BY s.score DESC LIMIT ?",
         (limit,),
     )
