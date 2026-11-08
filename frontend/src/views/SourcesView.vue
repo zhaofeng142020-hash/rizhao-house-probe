@@ -104,6 +104,11 @@
           <span v-else class="tiny muted">正常</span>
         </span>
       </div>
+      <div v-if="ov.quality" class="tiny" style="margin-top:8px;line-height:1.8">
+        真实成交锚点：<b class="mono">{{ ov.quality.deal_anchor_n ?? 0 }}</b> 条
+        （法拍成交价，人工 / CSV 回填，非自动采集）· 最近成交日 {{ ov.quality.deal_latest || '—' }}
+        · <a style="color:var(--brand);cursor:pointer" @click="$router.push('/deals')">查看成交页 →</a>
+      </div>
       <div class="tiny muted" style="margin-top:6px;line-height:1.7">{{ ov.quality.note }}</div>
     </div>
 

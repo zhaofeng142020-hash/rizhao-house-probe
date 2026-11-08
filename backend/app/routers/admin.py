@@ -613,35 +613,63 @@ class AuctionResultIn(BaseModel):
     deal_date: str | None = None
 
 
-@router.post("/auctions/{auction_id}/result")
-def save_auction_result(auction_id: int, payload: AuctionResultIn):
-    """回填某场法拍的实际成交价，并写入一条 auction_result 异动（真实锚点）。"""
+class AuctionResultBatchIn(BaseModel):
+    rows: list[dict] | None = None
+    csv: str | None = None
+
+
+def _parse_deal_date(value) -> str:
+    """成交日期严格 YYYY-MM-DD；留空用今天。非法直接抛 ValueError。"""
+    s = str(value or "").strip()[:10]
+    if not s:
+        return date.today().isoformat()
+    try:
+        return date.fromisoformat(s).isoformat()
+    except ValueError as exc:
+        raise ValueError(f"成交日期须为 YYYY-MM-DD（收到 {value!r}）") from exc
+
+
+def _apply_auction_result(auction_id: int, deal_price, deal_date) -> dict:
+    """单条/批量共用的落库逻辑。校验失败抛 ValueError，由调用方决定 400 还是计入 errors。
+
+    事件键刻意不带日期：同一标的重复回填 / 改价只保留一条 auction_result，
+    靠 insert_event 的 ON CONFLICT DO UPDATE 更新金额，不会越回填越多。
+    """
+    import math
+
     from ..db import execute, query_one
-    from ..services.anomaly import build_event_key
     from ..services.pipeline import insert_event
 
     au = query_one("SELECT * FROM auction WHERE id=?", (auction_id,))
     if not au:
-        raise HTTPException(404, "法拍房源不存在")
-    if payload.deal_price is None or float(payload.deal_price) <= 0:
-        raise HTTPException(400, "成交价必须为正数")
-    deal_price = float(payload.deal_price)
-    deal_date = (payload.deal_date or date.today().isoformat())[:10]
+        raise ValueError("法拍标的不存在")
+    try:
+        price = float(deal_price)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("成交价必须是数字") from exc
+    if not math.isfinite(price) or price <= 0:
+        raise ValueError("成交价必须为正数")
+    # 金额单位是元；10 亿元以上的录入基本是串列/多写了零，也会让派生单价
+    # 撑爆 SQLite 的 INTEGER，挡在写库之前。
+    if price > 1_000_000_000:
+        raise ValueError("成交价超出合理范围（应 ≤ 10 亿元）")
+    d = _parse_deal_date(deal_date)
+
     execute(
         "UPDATE auction SET deal_price=?,deal_date=?,status='sold' WHERE id=?",
-        (deal_price, deal_date, auction_id),
+        (price, d, auction_id),
     )
     appraisal = float(au.get("appraisal_price") or 0)
     start = float(au.get("start_price") or 0)
     area = float(au.get("area") or 0)
     detail = {
-        "deal_price": deal_price,
-        "deal_date": deal_date,
-        "deal_discount_pct": round((1 - deal_price / appraisal) * 100, 1) if appraisal else None,
-        "over_start_pct": round((deal_price - start) / start * 100, 1) if start else None,
+        "deal_price": price,
+        "deal_date": d,
+        "deal_discount_pct": round((1 - price / appraisal) * 100, 1) if appraisal else None,
+        "over_start_pct": round((price - start) / start * 100, 1) if start else None,
     }
     insert_event({
-        "event_key": build_event_key("auction_result", "auction", auction_id, date.today()),
+        "event_key": f"auction_result|auction|{auction_id}",
         "event_date": date.today().isoformat(),
         "target_type": "auction",
         "target_id": auction_id,
@@ -649,10 +677,73 @@ def save_auction_result(auction_id: int, payload: AuctionResultIn):
         "district": au.get("district"),
         "event_type": "auction_result",
         "severity": "white",
-        "total_price": deal_price,
-        "unit_price": round(deal_price / area) if area else None,
+        "total_price": price,
+        "unit_price": round(price / area) if area else None,
         "ref_unit_price": au.get("comparable_unit_price"),
         "drop_pct": round(-(detail["deal_discount_pct"] or 0) / 100, 4),
         "detail": detail,
     })
-    return {"ok": True, "auction_id": auction_id, **detail}
+    return {
+        "ok": True,
+        "auction_id": auction_id,
+        **detail,
+        "deal_unit": round(price / area, 1) if area else None,
+        "source_kind": au.get("source_kind") or "demo",
+    }
+
+
+@router.post("/auctions/results/import")
+def import_auction_results(payload: AuctionResultBatchIn):
+    """批量回填法拍成交价：rows 或 csv，列名 auction_id,deal_price,deal_date。
+
+    逐行校验、逐行隔离：单行失败只记 reason，不影响其它行；
+    静态路由注册在 /{auction_id}/result 之前，避免被动态段吃掉。
+    """
+    import csv as _csv
+    import io
+
+    rows: list[dict] = []
+    if payload.csv:
+        try:
+            rows = list(_csv.DictReader(io.StringIO(payload.csv.strip().lstrip("\ufeff"))))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"CSV 解析失败：{exc}") from exc
+    elif payload.rows:
+        rows = list(payload.rows)
+    if not rows:
+        raise HTTPException(400, "没有可导入的行（rows 或 csv 至少给一个）")
+    if len(rows) > 500:
+        raise HTTPException(400, "单批最多 500 行")
+
+    saved = skipped = 0
+    errors: list[dict] = []
+    for i, r in enumerate(rows, start=1):
+        try:
+            aid = int(r.get("auction_id"))
+        except (TypeError, ValueError):
+            errors.append({"row": i, "reason": "auction_id 缺失或不是整数"})
+            skipped += 1
+            continue
+        try:
+            _apply_auction_result(aid, r.get("deal_price"), r.get("deal_date"))
+            saved += 1
+        except ValueError as exc:
+            errors.append({"row": i, "reason": str(exc)})
+            skipped += 1
+        except Exception as exc:  # noqa: BLE001 单行异常隔离
+            errors.append({"row": i, "reason": f"{type(exc).__name__}: {exc}"})
+            skipped += 1
+    return {"ok": True, "saved": saved, "skipped": skipped, "errors": errors}
+
+
+@router.post("/auctions/{auction_id}/result")
+def save_auction_result(auction_id: int, payload: AuctionResultIn):
+    """回填某场法拍的实际成交价，并写一条 auction_result 真实锚点事件。"""
+    from ..db import query_one
+
+    if not query_one("SELECT 1 FROM auction WHERE id=?", (auction_id,)):
+        raise HTTPException(404, "法拍房源不存在")
+    try:
+        return _apply_auction_result(auction_id, payload.deal_price, payload.deal_date)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc

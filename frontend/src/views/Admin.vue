@@ -82,6 +82,33 @@
         </div>
       </div>
 
+      <!-- 法拍成交批量回填：真实成交价锚点的人工入口 -->
+      <div class="card card-pad section-gap">
+        <div class="card-title">
+          法拍成交批量回填
+          <span class="hint">真实成交价锚点 · 人工录入，不是自动采集</span>
+        </div>
+        <div class="tiny muted" style="line-height:1.85;margin-bottom:8px">
+          粘贴 CSV，列头固定为 <code>auction_id,deal_price,deal_date</code>（金额单位：元，日期 YYYY-MM-DD）。
+          单行填错只跳过该行并给出原因，不影响其它行。回填后标的标记为已成交、从「在拍机会」移出，
+          并出现在 <a style="color:var(--brand);cursor:pointer" @click="$router.push('/deals')">成交锚点页</a>。
+          <strong>法拍成交价 ≠ 二手成交价</strong>，请不要拿它当全城成交均价。
+        </div>
+        <el-input v-model="dealCsv" type="textarea" :rows="4"
+                  placeholder="auction_id,deal_price,deal_date&#10;12,720000,2026-10-01&#10;13,680000,2026-10-05" />
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <el-button size="small" type="primary" :loading="importing" @click="importDeals">导入</el-button>
+          <el-button size="small" @click="dealCsv = ''">清空</el-button>
+          <a class="tiny" style="color:var(--brand);cursor:pointer" @click="$router.push('/deals')">查看成交锚点 →</a>
+        </div>
+        <div v-if="dealResult" class="tiny" style="margin-top:8px;line-height:1.9">
+          成功 <b>{{ dealResult.saved }}</b> 条，跳过 <b>{{ dealResult.skipped }}</b> 条。
+          <div v-for="(e, i) in dealResult.errors" :key="i" style="color:#b45309">
+            第 {{ e.row }} 行：{{ e.reason }}
+          </div>
+        </div>
+      </div>
+
       <div class="grid-2 section-gap">
         <!-- 更新机制 -->
         <div class="card card-pad">
@@ -378,6 +405,29 @@ const running = ref(false)
 const saving = ref(false)
 const testing = ref(false)
 const testResult = ref(null)
+const dealCsv = ref('')
+const importing = ref(false)
+const dealResult = ref(null)
+
+async function importDeals() {
+  if (!dealCsv.value.trim()) {
+    ElMessage.warning('请先粘贴 CSV 内容')
+    return
+  }
+  importing.value = true
+  dealResult.value = null
+  try {
+    dealResult.value = await api.importAuctionResults({ csv: dealCsv.value })
+    const r = dealResult.value
+    ElMessage[r.saved ? 'success' : 'warning'](
+      r.saved ? `已回填 ${r.saved} 条成交价，跳过 ${r.skipped} 条` : `没有成功回填的行，跳过 ${r.skipped} 条`
+    )
+  } catch (e) {
+    ElMessage.error('导入失败：' + e.message)
+  } finally {
+    importing.value = false
+  }
+}
 
 const integration = ref([])
 const webhookReady = ref(false)

@@ -368,6 +368,67 @@ export function marketOption(series = []) {
   }
 }
 
+/**
+ * 法拍成交锚点：月度中位折价率（线，左轴）+ 成交套数（柱，右轴）。
+ * 样本 <3 的月份柱子淡出，提醒「这个点只有一两套房，别当趋势」。
+ */
+export function dealCurveOption(byPeriod = []) {
+  if (!byPeriod.length) return null
+  return {
+    grid: { left: 10, right: 14, top: 34, bottom: 24, containLabel: true },
+    legend: { top: 0, left: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: C.muted, fontSize: 11 } },
+    tooltip: {
+      ...tooltipStyle,
+      trigger: 'axis',
+      formatter: (ps) => {
+        const idx = ps[0].dataIndex
+        const p = byPeriod[idx]
+        return `${p.period}<br/>成交 ${p.n} 套` +
+          `<br/>中位折价 ${p.median_discount_pct == null ? '—' : p.median_discount_pct + '%'}` +
+          `<br/>中位成交单价 ${p.median_deal_unit == null ? '—' : Math.round(p.median_deal_unit).toLocaleString() + ' 元/㎡'}` +
+          (p.n < 3 ? '<br/><span style="color:#b45309">样本少，仅供参考</span>' : '')
+      },
+    },
+    xAxis: {
+      type: 'category', data: byPeriod.map((p) => p.period.slice(2)), boundaryGap: true,
+      axisLine: { lineStyle: { color: C.line } }, axisTick: { show: false },
+      axisLabel: { color: C.muted, fontSize: 10, interval: Math.max(0, Math.floor(byPeriod.length / 8) - 1) },
+    },
+    yAxis: [
+      {
+        type: 'value', name: '折价%', scale: true,
+        nameTextStyle: { color: C.muted, fontSize: 11 },
+        splitLine: { lineStyle: { color: C.line, type: 'dashed' } },
+        axisLabel: { color: C.muted, fontSize: 11, formatter: (v) => v + '%' },
+      },
+      {
+        type: 'value', name: '套', minInterval: 1,
+        nameTextStyle: { color: C.muted, fontSize: 11 },
+        splitLine: { show: false },
+        axisLabel: { color: C.muted, fontSize: 11 },
+      },
+    ],
+    series: [
+      {
+        name: '成交套数', type: 'bar', yAxisIndex: 1, barWidth: 12,
+        data: byPeriod.map((p) => ({
+          value: p.n,
+          itemStyle: {
+            color: p.n < 3 ? 'rgba(100,116,139,.18)' : 'rgba(100,116,139,.40)',
+            borderRadius: [3, 3, 0, 0],
+          },
+        })),
+      },
+      {
+        name: '中位折价率', type: 'line', yAxisIndex: 0, smooth: true,
+        symbolSize: 6, connectNulls: false,
+        lineStyle: { color: C.brand, width: 2 }, itemStyle: { color: C.brand },
+        data: byPeriod.map((p) => p.median_discount_pct),
+      },
+    ],
+  }
+}
+
 /** 异动类型分布（横向条形） */
 export function eventTypeOption(byType = []) {
   const sorted = [...byType].sort((a, b) => a.n - b.n)

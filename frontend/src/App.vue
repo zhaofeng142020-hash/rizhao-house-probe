@@ -137,6 +137,7 @@ const navItems = computed(() => [
   { path: '/map', label: '小区地图', short: '地图', icon: 'MapLocation', tab: true },
   { path: '/area', label: '改善 120-150㎡', short: '改善', icon: 'House', tab: true },
   { path: '/newhomes', label: '新房倒挂', short: '新房', icon: 'OfficeBuilding', tab: false },
+  { path: '/deals', label: '成交锚点', short: '成交', icon: 'Tickets', tab: false },
   { path: '/search', label: '搜索小区', short: '搜索', icon: 'Search', tab: false },
   { path: '/sources', label: '数据来源', short: '来源', icon: 'Document', tab: false },
   { path: '/watchlist', label: '观察清单', short: '观察', icon: 'Star', tab: false, badge: dashboard.value?.counts?.watched || 0 },

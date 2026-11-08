@@ -155,9 +155,11 @@ python deploy_pack.py          # 生成 ../rizhao-house-probe-deploy（约 3MB�
 ```bash
 cd backend
 python -m pytest tests -q
-# 103 passed —— 覆盖评分纯函数、异动规则、分级、推送去重/降级、全部 API，
+# 141 passed —— 覆盖评分纯函数、异动规则、分级、推送去重/降级、全部 API，
 #              以及鉴权、成本/议价、地图 Key、备份恢复、企微错误码、来源真实性、
-#              小区搜索转义、价格快照/趋势、关注小区波动、真实导入校验
+#              小区搜索转义、价格快照/趋势、关注小区波动、真实导入校验、
+#              下架判定/大盘快照/租售比/降价规律（PR#1/#2）、
+#              法拍成交闭环（成交指标、汇总口径、回填幂等、批量导入、sold 过滤）
 ```
 
 ---
@@ -256,7 +258,7 @@ rizhao-house-probe/
 
 ## 5. 数据库表设计
 
-完整 DDL 见 [`backend/app/schema.sql`](backend/app/schema.sql)，共 16 张表：
+完整 DDL 见 [`backend/app/schema.sql`](backend/app/schema.sql)，共 18 张表：
 
 | 表 | 作用 | 关键字段 |
 |---|---|---|
@@ -276,6 +278,8 @@ rizhao-house-probe/
 | `user_pref` | 用户偏好 | 板块/面积/户型/电梯/房龄/学区 + 首付比/贷款年限/利率/是否首套 |
 | `community_price_snapshot` | **小区价格快照** | `(community_id, observed_date)` 唯一；中位/均价/极值单价、样本量、120-150㎡ 套数、`data_kind`（daily / backfill） |
 | `source_import_batch` | **导入批次** | 每次真实导入的来源、收到/入库/跳过条数、备注，可逐批回溯 |
+| `market_daily` | **市场大盘日快照** | `day UNIQUE`：在售总量/中位挂牌单价/新增/下架（仅 crawled 口径） |
+| `rent_sample` | **租金样本** | `fingerprint UNIQUE`：贝壳租房页每周采集，按小区算真实租售比 |
 
 旧库升级时 `db.py` 的 `COLUMN_PATCHES` 会给 `listing` / `auction` / `new_home` 补
 `source_kind` / `source_name` / `source_ref` / `collected_at`，给 `community` 补 `alias`。
@@ -888,6 +892,7 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 2. **全城日快照**：在售总量 / 中位挂牌单价 / 当日新增 / 当日下架，落 market_daily 时间序列
    （只统计 source_kind='crawled'，演示样本不计入）。前端首页「市场大盘」卡片 + GET /api/market/overview。
 3. **法拍成交结果回填（真实价格锚点）**：法拍是日照少数能公开拿到真实成交价的渠道。
+    完整口径与前端视图见 [15.2.6](#1526-法拍成交锚点真实成交价闭环)。
    拍卖结束后 POST /api/admin/auctions/{id}/result 录入成交价，写回 deal_price 并生成 auction_result 事件。
 
 去化近似 = 在售总量 / 近 30 天下架量，明确标注为「近似」，只做方向参考。
@@ -898,6 +903,30 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 租金中位(元/㎡·月)×12 ÷ 在售挂牌单价中位。小区详情页与首页大盘都有展示；
 来源页新增「数据质量」面板，异动页新增「降价时机规律」，购房成本面板新增
 「利率敏感度：同样月供能买多贵」，观察清单页新增「关注小区横向对比」。
+
+### 15.2.6 法拍成交锚点（真实成交价闭环）
+
+PR#3 把「真实成交价」从「只有接口、回填完就从界面消失」做成完整闭环：
+
+| 入口 | 做什么 |
+|---|---|
+| 法拍详情页「回填成交价」 | 单条录入成交总价（元）+ 成交日期，写 `deal_price`/`deal_date`，标的转 `sold` |
+| 管理台「法拍成交批量回填」 | 贴 CSV（`auction_id,deal_price,deal_date`），单行失败只跳过该行并给出原因 |
+| `GET /api/market/deals` | 成交汇总 + 按月折扣曲线 + 逐条明细 |
+| `#/deals` 成交锚点页 | 4 个指标 + 曲线 + 明细表，每条可点原始公告页复核 |
+| 首页 / 数据来源页 | 大盘追加「真实成交锚点」指标、数据质量面板显示锚点数与最近成交日 |
+
+- **口径**：`services/deal_pulse.py` 的 `deal_metrics()` 统一算成交单价、相对评估价折价率、高出起拍幅度、
+  相对同小区在挂挂牌中位的偏离；`deal_summary()` 只收 `deal_price > 0` 且 `source_kind <> 'demo'` 的记录，
+  样本 <5 条时明确标注「不构成统计结论」。
+- **去重**：成交事件用稳定键 `auction_result|auction|{id}`，同一标的重复回填 / 改价只保留一条事件、金额被更新。
+- **不再串台**：`GET /api/auctions?status=sold|all` 能查到已成交标的；首页「法拍机会」与「捡漏排行」只认
+  `status='active'`，成交标的不会再被当成在拍机会推给用户。
+- **零迁移**：沿用 `auction.deal_price` / `deal_date`（`COLUMN_PATCHES` 自动补列），不建新表、不改 schema。
+- **红线**：法拍成交价 ≠ 二手成交价、人工回填 ≠ 自动采集、挂牌价 ≠ 成交价、下架 ≠ 成交；
+  阿里 / 京东拍卖成交页需 JS 渲染 / 签名，当前**不做自动抓取**，成交价一律人工 / CSV 回填。
+
+演示样本即使被回填，也不会进入成交汇总与折扣曲线（回填接口本身仍允许，方便本地验证）。
 
 ### 15.3 让房源真正变全：导入真实挂牌
 
@@ -952,6 +981,8 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 - **法拍到手价** 为估算，真实税费以当地税务与法院公告为准。
 - **下架 ≠ 成交**：market_daily.delist_n 是把「多日不再出现」当作成交活跃度的保守代理，含中介撤牌等情况；去化月数是用它做的近似，只能看方向，不能当成交套数。
 - **市场大盘只统计真实采集房源**（source_kind='crawled'），演示样本不计入。
+- **法拍成交锚点只统计人工/CSV 回填的成交价**，排除演示样本；法拍成交价 ≠ 二手成交价，
+  样本 <5 条的折扣曲线不构成统计结论，也不代表全城成交均价。
 
 ---
 
@@ -973,6 +1004,7 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 | GET | `/api/communities/followed` | 我关注的小区 + 各自最新波动 |
 | GET | `/api/market/overview` | **市场大盘**：全城在售/中位价/新增/下架趋势 + 去化近似（仅真实采集口径） |
 | GET | `/api/market/rents` | **真实租售比**：每小区租金中位与年化租金回报率（贝壳租房页每周自动抓） |
+| GET | `/api/market/deals` | **真实成交锚点**：法拍成交汇总 + 按月折扣曲线 + 明细（人工/CSV 回填口径） |
 | GET | `/api/meta/rate-table` | **利率敏感度**：同月供在不同利率档位可承受的总价 |
 | GET | `/api/anomalies/drop-timing` | **降价时机规律**：降价按月份/星期的分布（观察口径） |
 | POST | `/api/admin/refresh-rents` | 手动抓一次租房页并重算租售比（日常每周日自动） |
@@ -989,8 +1021,9 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 | GET | `/api/anomalies/today` | 今日可留意（红+黄，按分数排序） |
 | GET | `/api/anomalies/summary` | 异动统计（按类型 + 级别） |
 | GET | `/api/anomalies/ranking` | 捡漏排行（二手房 + 法拍混排） |
-| GET | `/api/auctions` `/api/auctions/{id}` | 法拍列表 / 详情（含到手价瀑布数据） |
-| POST | `/api/admin/auctions/{id}/result` | **回填法拍成交价**（真实价格锚点，生成 auction_result） |
+| GET | `/api/auctions` `/api/auctions/{id}` | 法拍列表（`status=active/sold/all`）/ 详情（到手价瀑布 + `deal` 成交结果） |
+| POST | `/api/admin/auctions/{id}/result` | **回填法拍成交价**（真实价格锚点，生成 auction_result，幂等） |
+| POST | `/api/admin/auctions/results/import` | **批量回填成交价**（rows 或 CSV，逐行校验、单行失败隔离） |
 | GET/POST | `/api/watchlist` | 观察清单（含价格曲线） |
 | PATCH/DELETE | `/api/watchlist/{id}` | 改跟进状态/备注、移除 |
 | GET | `/api/watchlist/weekly-report` | 观察周报 |
@@ -1019,7 +1052,7 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
 | 要求 | 落地位置 |
 |---|---|
 | 完整项目目录结构 | 见第 4 节 |
-| 数据库表设计（异动/评分/观察/订阅 SQL） | `backend/app/schema.sql`（17 张表，旧库启动自动补列） |
+| 数据库表设计（异动/评分/观察/订阅 SQL） | `backend/app/schema.sql`（18 张表，旧库启动自动补列） |
 | 异动检测 + 捡漏评分（纯函数、可单测） | `services/anomaly.py` / `services/scoring.py` + `tests/` |
 | 爬虫 parser（去重指纹 + 异常隔离） | `crawler/secondhand.py` / `crawler/auction.py` / `crawler/runner.py` |
 | 后端 API（异动/排行/观察/推送） | `backend/app/routers/` |
@@ -1048,7 +1081,8 @@ python tools/session_cookie.py --site wuba --dump     # 顺便存下列表页，
    演示模式（`CRAWL_ENABLED=0`）且库里**没有任何真实房源**时，若 `SEED_VERSION` 与库里记录不一致，启动会清空重灌一次演示数据；
    资产（观察清单 / 偏好 / 推送配置 / 运行期设置）会先备份再还原，不会丢。一旦导入过真实房源，重灌被禁止。
 5 个采集通道的 `verified=False` 是实情：解析器代码存在，但选择器尚未在真实站点逐项验证，不能当作已接通的数据源。其中 58 同城会弹人工滑块验证码，按 `crawler/base.py` 的合规红线**不破解验证码**，因此不提供自动采集。
-2. **"近 3 月中位"用的是在挂房源**，不是成交价。真实成交数据需要额外的数据源；表结构已预留 `price_history.kind='deal'`。
+2. **"近 3 月中位"用的是在挂房源**，不是成交价。目前唯一的真实成交价是人工回填的法拍成交锚点
+   （见 15.2.6），法拍成交 ≠ 二手成交，不能当作全城成交均价；表结构另预留 `price_history.kind='deal'`。
 3. **流动性分数（`liquidity_score`）目前是人工先验**（按板块 + 成交活跃度），小区页更硬的「去化月数」依赖 `community.deal_active_90d`，演示集同样是示意值。真正可用需要成交数据源。
 4. **地图默认不加载底图**：未配置 `AMAP_KEY` 时用自绘 SVG 示意投影（**只表达相对方位与距离，没有真实道路/水系**，不用于任何行政边界表达）；配置后使用高德地图（GCJ-02）。代码中不含任何内置密钥。
 5. **法拍税费/欠费/维修为兜底估算**，竞拍前必须人工核对。

@@ -62,6 +62,11 @@
             <div class="ms-value">{{ rents.city.yield_median }} <span class="ms-unit">%/年</span></div>
             <div class="ms-sub">{{ rents.city.sample_n }} 套在租样本</div>
           </div>
+          <div v-if="deals && deals.total > 0" class="ms-item">
+            <div class="ms-label">真实成交锚点</div>
+            <div class="ms-value">{{ deals.total }} <span class="ms-unit">条</span></div>
+            <div class="ms-sub">法拍中位折价 {{ fmt.signed(deals.summary?.median_discount_pct) }} · 非二手成交</div>
+          </div>
         </div>
         <Chart :option="marketChart" height="230px" />
         <div class="tiny" style="color:var(--muted);margin-top:6px">{{ market.clearance_note }}</div>
@@ -180,7 +185,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Chart from '../components/Chart.vue'
@@ -198,6 +203,7 @@ const auctions = ref([])
 const summary = ref({ by_type: [] })
 const market = ref(null)
 const rents = ref(null)
+const deals = ref(null)
 
 const counts = computed(() => dashboard.value?.counts || {})
 const recentEvents = computed(() => (dashboard.value?.recent_events || []).slice(0, 6))
@@ -238,6 +244,9 @@ async function load() {
     try {
       rents.value = await api.marketRents()
     } catch (e) { /* 租售比失败不阻塞首页 */ }
+    try {
+      deals.value = await api.dealSummary(730)
+    } catch (e) { /* 成交锚点失败不阻塞首页 */ }
   } catch (e) {
     ElMessage.error('加载失败：' + e.message)
   } finally {
