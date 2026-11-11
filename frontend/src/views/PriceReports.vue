@@ -139,7 +139,7 @@ async function load() {
   error.value = ''
   try {
     report.value = await api.dailyReport({ day: selectedDay.value })
-    trend.value = (await api.reportRange({ days: 7 })).items || []
+    trend.value = (await api.reportRange(7)).items || []
   } catch (e) {
     error.value = '报告加载失败：' + (e.message || e)
   } finally {
