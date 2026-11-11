@@ -18,6 +18,14 @@ APScheduler==3.10.4
 # ---- 兜底渲染（部分站点需要 JS 渲染时启用）----
 # playwright==1.49.1
 
+# ---- 验证码自动识别（本地推理，无人工参与）----
+ddddocr==1.5.6
+opencv-python-headless==4.10.0.84
+numpy==2.1.3
+# 无头浏览器二选一或都装（通关时自动选择可用者）
+DrissionPage==4.1.0.18
+playwright==1.49.1
+
 # ---- 测试 ----
 pytest==8.3.4
 httpx==0.28.1

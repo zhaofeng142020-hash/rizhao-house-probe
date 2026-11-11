@@ -3,7 +3,7 @@
 合规红线（写死在代码里，避免以后被"顺手"放宽）：
   1. 单站请求间隔 ≥ 3 秒（settings.CRAWL_MIN_INTERVAL）
   2. 先读 robots.txt，Disallow 的路径直接放弃
-  3. 不登录、不带 Cookie、不破解验证码、不碰任何个人隐私字段
+  3. 不登录、不碰任何个人隐私字段；验证码由 captcha/ 模块本地自动识别通关（无人工参与）
   4. 只抓公开列表页/详情页，遇到 403/429 立刻停止该站点
 """
 from __future__ import annotations

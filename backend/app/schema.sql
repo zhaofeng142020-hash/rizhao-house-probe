@@ -405,3 +405,14 @@ CREATE TABLE IF NOT EXISTS source_import_batch (
     note            TEXT,
     created_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
 );
+
+-- ---------------------------------------------------------------------------
+-- 19. 每日调价报告（涨价/降价明细 + 汇总，网页端查看）
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS daily_price_report (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    day         TEXT NOT NULL UNIQUE,                 -- YYYY-MM-DD
+    payload     TEXT NOT NULL,                        -- JSON：summary + up[] + down[]
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_daily_report_day ON daily_price_report(day);

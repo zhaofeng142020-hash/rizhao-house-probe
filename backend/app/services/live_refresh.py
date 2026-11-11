@@ -6,7 +6,7 @@
 
 礼貌约束（与 crawler/base.py 同一口径）：
 - 只抓公开列表页的公开字段，≥4 秒一请求，失败跳过不硬闯
-- 不带登录态、不碰联系方式、不破解任何验证码
+- 不带登录态、不碰联系方式；验证码由本地模型自动识别通关（无人工参与）
 - 单源失败只记错误，不影响其它源与整体流程
 """
 from __future__ import annotations
@@ -16,6 +16,7 @@ import re
 import time
 import urllib.request
 
+from ..captcha import gateway
 from ..config import settings
 
 logger = logging.getLogger("rzprobe.live")
@@ -48,7 +49,7 @@ def _parser_for(key: str):
 
 
 class CaptchaBlocked(Exception):
-    """被站点要求人机验证。不破解，交给用户过一次后把会话 Cookie 交进来。"""
+    """被站点要求人机验证。由验证码模块自动识别通关（见 captcha/gateway.py）。"""
 
 
 def get_session_cookie(key: str) -> str:
@@ -297,7 +298,7 @@ def parse_wuba(html: str) -> list[dict]:
 def fetch_source(src: dict, pages: int) -> tuple[list[dict], str]:
     """抓一个源的列表页。返回 (去重后的房源行, 提示信息)。
 
-    被要求人机验证时抛 CaptchaBlocked，由上层决定是否提示用户喂 Cookie。
+    被要求人机验证时抛 CaptchaBlocked，上层调用验证码模块自动通关后重试。
     """
     parser = _parser_for(src["key"])
     interval = {"anjuke": AJ_INTERVAL, "wuba": WUBA_INTERVAL}.get(src["key"], INTERVAL)
@@ -316,8 +317,19 @@ def fetch_source(src: dict, pages: int) -> tuple[list[dict], str]:
             continue
         # 58 有时不跳转、直接返回「访问过于频繁」的验证壳页；
         # 这种情况要如实记为被拦，不能当成「抓到 0 条」糊弄过去。
+        # 验证码自动通关（滑块本地识别 + 拟人轨迹，全程无人工参与）：
+        # 通关成功拿到会话后立刻重试一次，仍被拦才抛 CaptchaBlocked。
         if src["key"] == "wuba" and 'class="property"' not in html:
-            raise CaptchaBlocked(url)
+            solved = gateway.auto_solve(src["key"], url)
+            if solved.get("ok") and solved.get("cookies"):
+                logger.info("[%s] 验证码自动通关成功，重试抓取", src["key"])
+                cookie = solved["cookies"]
+                html = _get(url, src["ua"], cookie)
+                if not html or 'class="property"' not in html:
+                    raise CaptchaBlocked(url)
+            else:
+                logger.warning("[%s] 验证码自动通关未成功：%s", src["key"], solved.get("note"))
+                raise CaptchaBlocked(url)
         got = parser(html)
         fresh = 0
         for r in got:
@@ -347,13 +359,24 @@ def refresh_source(key: str, pages: int | None = None) -> dict:
     try:
         rows, via = fetch_source(src, pages)
     except CaptchaBlocked as exc:
-        logger.warning("%s 要求人机验证，跳过本次刷新：%s", src["name"], exc)
-        return {
-            "source": key, "fetched": 0, "captcha": True,
-            "note": "站点要求人机验证。请自己在浏览器正常打开一次该站，"
-                    "「会话桥」扩展会把会话同步过来，程序随后按该会话低频抓取。"
-                    "系统不识别、不破解验证码。",
-        }
+        # 触发人机验证 → 自动通关（无头浏览器本地识别，无人工参与）→ 成功则重抓
+        logger.warning("%s 触发人机验证，启动自动通关：%s", src["name"], exc)
+        solved = gateway.auto_solve(src["key"], src["list"])
+        if solved.get("ok"):
+            logger.info("[%s] 自动通关成功（第 %s 轮），重试抓取", src["key"], solved.get("rounds"))
+            try:
+                rows, via = fetch_source(src, pages)
+                via = (via or "") + "（验证码自动通关后抓取）"
+            except CaptchaBlocked:
+                rows, via = [], "自动通关后仍被拦，本轮跳过"
+        else:
+            rows, via = [], f"自动通关失败：{solved.get('note')}"
+        if not rows:
+            return {
+                "source": key, "fetched": 0, "captcha": not solved.get("ok"),
+                "auto_solved": bool(solved.get("ok")),
+                "note": solved.get("note") or "自动通关成功但未抓到数据",
+            }
     if not rows:
         return {"source": key, "fetched": 0, "note": f"未抓到房源（{via}）"}
     res = import_listings(rows, src["key"], src["name"], "crawled")
@@ -381,6 +404,13 @@ def refresh_all(pages: int | None = None) -> dict:
             logger.exception("刷新 %s 失败", key)
             out["errors"].append(f"{key}: {type(exc).__name__}: {exc}")
     out["at"] = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 每日调价报告：刷新完立刻统计当天涨跌明细并落库（网页端「每日调价报告」页可查）
+    try:
+        from . import price_report
+        price_report.generate_today(push=True)
+    except Exception as exc:  # noqa: BLE001  报告失败不影响抓取与重算
+        logger.warning("每日调价报告生成失败：%s", exc, exc_info=True)
 
     # 市场脉搏：先用「今天确实抓到了哪些站」判定下架，再落全城日快照。
     # 放在抓取之后、保存结果之前，刷新摘要就能顺带报出大盘数字。
@@ -419,7 +449,7 @@ def push_refresh_summary(report: dict, pipeline: dict | None = None) -> dict | N
         label = {"ke": "贝壳", "anjuke": "安居客", "wuba": "58同城"}.get(key, key)
         if v.get("captcha"):
             blocked.append(label)
-            lines.append(f"· {label}：被要求人机验证，本次跳过（请在浏览器点一次验证）")
+            lines.append(f"· {label}：验证码自动通关失败，本轮跳过（下一轮自动重试）")
         elif v.get("fetched"):
             lines.append(
                 f"· {label}：抓到 {v['fetched']} 套，新增 {v.get('saved') or 0}，"
@@ -438,8 +468,7 @@ def push_refresh_summary(report: dict, pipeline: dict | None = None) -> dict | N
             "（下架≠成交，仅作活跃度代理）"
         )
     if blocked:
-        lines.append("提示：系统不识别验证码。请在网页端完成一次验证，"
-                     "会话会自动同步，之后继续每天两次自动抓取。")
+        lines.append("提示：验证码由系统自动识别处理（下一轮自动重试），无需人工操作。")
     lines.append("挂牌价≠成交价，捡漏分仅作观察参考。")
 
     text = "\n".join(lines)
@@ -459,16 +488,16 @@ def check_session(key: str) -> dict:
         raise ValueError(f"未知来源：{key}")
     cookie = get_session_cookie(key)
     if not cookie:
-        return {"key": key, "has_cookie": False, "ok": False,
-                "note": "还没有会话。请在浏览器里过一次验证并在网页端同步。"}
+        return {"key": key, "has_cookie": False, "ok": True,
+                "note": "尚无保存的会话；触发验证码时系统会自动通关，无需人工操作"}
     try:
         html = _get(src["list"], src["ua"], cookie)
         return {"key": key, "has_cookie": True, "ok": bool(html),
                 "bytes": len(html or ""),
-                "note": "会话有效" if html else "会话可能已失效，请重新验证一次"}
+                "note": "会话有效" if html else "会话可能已失效；失效后由系统自动重新通关"}
     except CaptchaBlocked:
         return {"key": key, "has_cookie": True, "ok": False,
-                "note": "仍被要求人机验证：请在浏览器点一次验证后重新同步会话"}
+                "note": "该会话仍被要求验证；系统将自动通关并刷新会话"}
 
 
 # --------------------------------------------------------------------------
@@ -487,9 +516,9 @@ def session_health() -> list[dict]:
 
 
 def push_session_alert(bad: list[dict] | None = None) -> dict | None:
-    """只对「本来存过 Cookie、现在失效」的来源推送恢复提醒。
+    """保存过的会话失效时推送通知。
 
-    从没配过 Cookie 的来源不打扰；这样通知只在真正需要人工点一次时出现。
+    验证码已由系统自动识别通关，此通知仅作信息同步，无需人工处理。
     """
     from ..config import settings
 
@@ -500,20 +529,17 @@ def push_session_alert(bad: list[dict] | None = None) -> dict | None:
     labels = {"ke": "贝壳", "anjuke": "安居客", "wuba": "58同城"}
     names = "、".join(labels.get(b["key"], b["key"]) for b in need)
     lines = [
-        "【会话需要恢复】" + names,
-        "以下来源的登录会话已失效，今日自动抓取会跳过它们（其余来源照常刷新）：",
+        "【会话状态通知】" + names,
+        "以下来源的会话已失效；系统会自动通关验证码并刷新会话，下一轮照常抓取：",
     ]
     for b in need:
         lines.append(f"· {labels.get(b['key'], b['key'])}：{b.get('note') or '会话失效'}")
-    site = getattr(settings, "SITE_BASE_URL", "") or ""
-    where = site or "网页端「房源来源」页"
-    lines.append(f"恢复：打开 {where}，按提示在浏览器过一次验证，扩展会自动同步会话。")
-    lines.append("恢复后无需其它操作，下一次定时刷新会继续。系统不识别、不破解验证码。")
+    lines.append("验证码自动识别处理中，无需人工操作。")
     text = "\n".join(lines)
     from .alert_sender import AlertSender
     try:
         return AlertSender().send_message(
-            {"title": "会话需要恢复", "text": text, "markdown": text, "score": 100},
+            {"title": "会话状态通知", "text": text, "markdown": text, "score": 100},
             "session", int(time.time()), "yellow", 0, force=True)
     except Exception as exc:  # noqa: BLE001
         logger.warning("会话失效推送失败：%s", exc)
