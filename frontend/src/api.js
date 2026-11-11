@@ -38,7 +38,11 @@ async function request(path, options = {}) {
   const token = auth.get()
   if (token) headers['X-Admin-Token'] = token
 
-  const resp = await fetch(`${BASE}${path}`, { headers, ...options })
+  // 托管平台（如 WorkBuddy）用 ?sharecode= 做访问鉴权，且不会把该参数
+  // 自动带到页面内的 fetch/XHR 上；缺了它网关会直接返回 403/422。
+  // 这里统一把当前页面的 sharecode 附加到每个 API 请求上，缺省不影响自建部署。
+  const url = `${BASE}${withSharecode(path)}`
+  const resp = await fetch(url, { headers, credentials: 'same-origin', ...options })
   if (resp.status === 401) {
     let detail = '需要管理员口令'
     try {
@@ -63,6 +67,29 @@ function qs(params = {}) {
   const usable = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
   if (!usable.length) return ''
   return '?' + usable.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')
+}
+
+/**
+ * 取出当前页面的 sharecode 并附加到 API 路径上。
+ * WorkBuddy 等平台靠 URL 里的 sharecode 做网关鉴权，页面内 XHR 不会自动继承，
+ * 不补这一步会出现「页面能开、接口 403/422」。自建部署没有该参数时原样返回。
+ */
+function withSharecode(path) {
+  let code = ''
+  try {
+    const fromQuery = new URLSearchParams(window.location.search).get('sharecode')
+    if (fromQuery) code = fromQuery
+    // 有些平台把参数放在 hash 路由里：/#/x?sharecode=xxx
+    if (!code && window.location.hash.includes('sharecode=')) {
+      const hashQuery = window.location.hash.split('?')[1] || ''
+      code = new URLSearchParams(hashQuery).get('sharecode') || ''
+    }
+    // 导航一次后 query 可能丢失，用 sessionStorage 兜底记住
+    if (code) sessionStorage.setItem('rz_sharecode', code)
+    else code = sessionStorage.getItem('rz_sharecode') || ''
+  } catch (e) { /* 隐私模式等场景忽略 */ }
+  if (!code) return path
+  return path + (path.includes('?') ? '&' : '?') + 'sharecode=' + encodeURIComponent(code)
 }
 
 export const api = {
