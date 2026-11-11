@@ -96,6 +96,10 @@ export const api = {
   auctionResults: (status = 'sold') => request(`/api/auctions${qs({ status })}`),
 
   // ---- 数据来源 ----
+  // ---- 每日调价报告 ----
+  dailyReport: (params) => request(`/api/reports/daily${qs(params)}`),
+  reportDays: (limit = 30) => request(`/api/reports/days${qs({ limit })}`),
+  reportRange: (days = 7) => request(`/api/reports/range${qs({ days })}`),
   sourceOverview: () => request('/api/sources'),
   sourceTemplate: () => request('/api/sources/template'),
   importListings: (data) => request('/api/admin/sources/import', { method: 'POST', body: JSON.stringify(data) }),
