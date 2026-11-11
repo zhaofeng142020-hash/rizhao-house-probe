@@ -1,0 +1,51 @@
+name: Build & Commit WebUI
+
+# 云端构建前端 → 把构建产物直接提交回仓库（backend/app/webui/）
+# 好处：部署时仓库里就是最新可用代码，不依赖 artifact 下载，也不依赖本地电脑
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'backend/app/webui/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 构建前端
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: 确认产物存在
+        run: |
+          test -f backend/app/webui/index.html || (echo "构建产物缺失" && exit 1)
+          du -sh backend/app/webui
+          ls backend/app/webui
+
+      - name: 提交构建产物
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A backend/app/webui
+          if git diff --staged --quiet; then
+            echo "产物无变化，跳过提交"
+          else
+            git commit -m "build: 更新前端产物 [skip ci]"
+            git push
+          fi
