@@ -129,7 +129,8 @@ def save_report(day: str, data: dict) -> int:
 
 
 def generate_today(push: bool = False) -> dict:
-    """生成当天报告：入库 + 返回。刷新调度器每次刷新后调用。"""    day = date.today().isoformat()
+    """生成当天报告：入库 + 返回。刷新调度器每次刷新后调用。"""
+    day = date.today().isoformat()
     data = collect_day_changes(day)
     save_report(day, data)
     logger.info("每日调价报告已生成：%s 涨 %s / 降 %s",
