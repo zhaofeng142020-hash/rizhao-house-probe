@@ -19,8 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from .config import BASE_DIR, settings
 from .db import init_db, query_one
 from .routers import (
-    admin, alerts, anomalies, auctions, communities, listings, market, meta, newhomes, sources,
-    target, watchlist,
+    admin, alerts, anomalies, auctions, communities, listings, market, meta, newhomes, reports,
+    sources, target, watchlist,
 )
 from .scheduler import shutdown_scheduler, start_scheduler
 from .services import auth, backup
@@ -158,6 +158,7 @@ app.include_router(target.router)
 app.include_router(admin.router)
 app.include_router(sources.router)
 app.include_router(sources.admin_router)
+app.include_router(reports.router)
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
