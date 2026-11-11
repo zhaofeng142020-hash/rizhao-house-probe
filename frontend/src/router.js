@@ -4,6 +4,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 const routes = [
   { path: '/', name: 'home', component: () => import('./views/Home.vue'), meta: { title: '今日可留意' } },
   { path: '/anomalies', name: 'anomalies', component: () => import('./views/Anomalies.vue'), meta: { title: '异动专区' } },
+  { path: '/reports', name: 'reports', component: () => import('./views/PriceReports.vue'), meta: { title: '每日调价报告' } },
   { path: '/map', name: 'map', component: () => import('./views/MapView.vue'), meta: { title: '小区地图' } },
   { path: '/area', name: 'area', component: () => import('./views/AreaTarget.vue'), meta: { title: '改善 120-150㎡' } },
   { path: '/newhomes', name: 'newhomes', component: () => import('./views/NewHomes.vue'), meta: { title: '新房倒挂' } },
